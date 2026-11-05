@@ -1,0 +1,78 @@
+/* 3D Flip Card Styles */
+.perspective-1000 {
+    perspective: 1000px;
+}
+
+.flashcard-inner {
+    position: relative;
+    width: 100%;
+    min-height: 380px;
+    text-align: center;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-style: preserve-3d;
+    cursor: pointer;
+}
+
+.flashcard-inner.is-flipped {
+    transform: rotateY(180deg);
+}
+
+.flashcard-front,
+.flashcard-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    border-radius: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2rem;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+
+.flashcard-front {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #e2e8f0;
+}
+
+.flashcard-back {
+    background: linear-gradient(135deg, #f0fdf4 0%, #f8fafc 100%);
+    border: 1px solid #bbf7d0;
+    transform: rotateY(180deg);
+}
+
+/* Custom Highlight Mark */
+mark.vocab-highlight {
+    background-color: #fef08a;
+    color: #854d0e;
+    font-weight: 700;
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.25rem;
+}
+
+/* Smooth Video Container */
+.video-wrapper {
+    position: relative;
+    border-radius: 1rem;
+    overflow: hidden;
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.2);
+    background-color: #0f172a;
+}
+
+/* Custom Scrollbar for results */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+

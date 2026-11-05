@@ -1,0 +1,35 @@
+# Virtual Environment (BẮT BUỘC bỏ qua vì nặng > 2GB)
+venv/
+env/
+ENV/
+.venv/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# SQLite Database & Local Data
+*.db
+*.sqlite3
+backend/vocab_app.db
+
+# Uploaded & Downloaded Video Files (Không push video nặng lên Git)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary & Log files
+*.log
+*.tmp
