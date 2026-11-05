@@ -114,13 +114,17 @@ async def process_video_from_url(
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="URL không hợp lệ. Vui lòng nhập link bắt đầu bằng http:// hoặc https://")
 
-    # 1. Tải video qua yt-dlp
+    # 1. Tải video qua yt-dlp (Kèm kiểm duyệt an ninh đa tầng)
     try:
         logger.info(f"Đang tải video từ đường link: {url}...")
         downloaded_filepath, detected_title, _ = downloader.download_video_from_url(
             url=url, 
             output_dir=UPLOAD_DIR
         )
+    except ValueError as ve:
+        # Lỗi phát hiện link độc hại, vi phạm an ninh SSRF hoặc file giả mạo
+        logger.warning(f"Từ chối link vi phạm an ninh: {str(ve)}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"Lỗi khi tải video từ URL: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Không thể tải video từ link này: {str(e)}")

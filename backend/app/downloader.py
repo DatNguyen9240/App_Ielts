@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import logging
 from typing import Tuple, Dict, Any
+from . import security
 
 logger = logging.getLogger("downloader")
 
@@ -54,17 +55,23 @@ def apply_faststart(filepath: str) -> str:
 
 def download_video_from_url(url: str, output_dir: str) -> Tuple[str, str, float]:
     """
-    Tải video từ đường link (YouTube, TikTok, Facebook, Google Drive, hoặc link trực tiếp .mp4).
-    Ưu tiên chuẩn H.264 720p - 1080p có phần cứng tăng tốc và tự động gắn FastStart để web phát tức thì.
+    Tải video từ đường link sau khi đã qua hệ thống kiểm duyệt an ninh đa tầng:
+    1. Kiểm tra SSRF & Private IP (Chặn link tấn công nội bộ).
+    2. Giới hạn dung lượng và thời lượng video (Chặn DoS / làm đơ server).
+    3. Kiểm tra Magic Bytes nhị phân đảm bảo file là video thật (Chặn mã độc giả dạng).
     """
     import yt_dlp
+
+    # 1. BƯỚC BẢO MẬT 1: KIỂM DUYỆT URL TRƯỚC KHI GỌI MẠNG
+    is_safe, sec_msg = security.validate_url_safety(url)
+    if not is_safe:
+        logger.warning(f"Chặn link không an toàn: {url} -> {sec_msg}")
+        raise ValueError(sec_msg)
 
     os.makedirs(output_dir, exist_ok=True)
     ffmpeg_path = get_ffmpeg_binary_path()
 
-    # Cấu hình tối ưu tốc độ phát web:
-    # 1. Giới hạn độ phân giải tối đa 720p/1080p (tránh kéo 4K AV1 cực nặng làm trình duyệt bị đơ)
-    # 2. Ưu tiên H.264 (avc1) + AAC vì 100% thiết bị đều hỗ trợ Hardware Acceleration
+    # 2. BƯỚC BẢO MẬT 2: CẤU HÌNH RÀNG BUỘC TÀI NGUYÊN (CHỐNG DOS)
     ydl_opts: Dict[str, Any] = {
         'format': (
             'bestvideo[height<=720][vcodec^=avc1]+bestaudio[ext=m4a]/'
@@ -79,6 +86,10 @@ def download_video_from_url(url: str, output_dir: str) -> Tuple[str, str, float]
         'noplaylist': True,
         'quiet': False,
         'no_warnings': True,
+        'socket_timeout': 15,  # Chặn treo kết nối (Slowloris attack)
+        'max_filesize': security.MAX_FILE_SIZE_BYTES,  # Tối đa 150MB chống tràn đĩa
+        # Chặn video quá 30 phút (tránh nghẽn server AI)
+        'match_filter': yt_dlp.utils.match_filter_func(f'duration <= {security.MAX_VIDEO_DURATION_SECONDS}'),
     }
 
     if ffmpeg_path:
@@ -102,8 +113,17 @@ def download_video_from_url(url: str, output_dir: str) -> Tuple[str, str, float]
         if not os.path.exists(final_file):
             raise FileNotFoundError(f"Không tìm thấy file sau khi tải: {final_file}")
 
-        # Tối ưu hóa FastStart ngay sau khi tải
+        # 3. BƯỚC BẢO MẬT 3: KIỂM TRA CHỮ KÝ NHỊ PHÂN (MAGIC BYTES)
+        is_genuine, magic_msg = security.verify_file_is_genuine_video(final_file)
+        if not is_genuine:
+            logger.error(f"Phát hiện file giả mạo hoặc nguy hiểm: {final_file} -> {magic_msg}")
+            # Xóa ngay file độc hại khỏi đĩa cứng
+            if os.path.exists(final_file):
+                os.remove(final_file)
+            raise ValueError(magic_msg)
+
+        # 4. Tối ưu hóa FastStart ngay sau khi tải
         final_file = apply_faststart(final_file)
 
-        logger.info(f"Tải và tối ưu hóa video thành công: {final_file} ({duration}s)")
+        logger.info(f"Tải và kiểm định video thành công: {final_file} ({duration}s)")
         return final_file, video_title, duration
