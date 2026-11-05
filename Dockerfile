@@ -31,3 +31,4 @@ EXPOSE 8000
 
 # Khởi chạy server FastAPI phục vụ cả API và giao diện Frontend
 CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+
