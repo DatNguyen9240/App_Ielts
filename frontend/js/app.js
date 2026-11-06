@@ -570,11 +570,12 @@ async function loadAndRenderTopicVideos(topic) {
             const mins = Math.floor(v.duration / 60);
             const secs = Math.floor(v.duration % 60);
             const durationStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+            const thumbUrl = v.thumbnail || `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
 
             card.innerHTML = `
                 <div>
                     <div class="relative aspect-video bg-slate-900 overflow-hidden cursor-pointer watch-now-trigger">
-                        <img src="${v.thumbnail}" alt="${v.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                        <img src="${thumbUrl}" alt="${v.title}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="if(!this.dataset.triedHq){this.dataset.triedHq='1'; this.src='https://i.ytimg.com/vi/${v.id}/hqdefault.jpg';} else { this.onerror=null; this.src='https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=640&q=80'; }">
                         <span class="absolute bottom-2 right-2 bg-black/80 text-white font-mono text-[11px] font-bold px-2 py-0.5 rounded-md">
                             ${durationStr}
                         </span>

@@ -64,15 +64,16 @@ def get_videos_for_topic(topic_id: int):
     if not topic_item:
         raise HTTPException(status_code=404, detail="Không tìm thấy chủ đề này")
 
-    # 1. Video mặc định chọn lọc
-    default_videos = curated_videos.TOPIC_DEFAULT_VIDEOS.get(topic_id, [])
-
-    # 2. Tìm kiếm thêm video thực tế từ YouTube
+    # 1. Tìm kiếm video thực tế trực tiếp từ YouTube
     online_videos = curated_videos.search_topic_videos_online(topic_item["short_title"], max_results=4)
+
+    # 2. Video chọn lọc sẵn (đảm bảo luôn có bài học chất lượng cao ngay cả khi offline)
+    default_videos = curated_videos.TOPIC_DEFAULT_VIDEOS.get(topic_id, [])
 
     seen_ids = set()
     combined = []
-    for v in default_videos + online_videos:
+    # Ưu tiên kết quả online mới nhất, kết hợp danh sách tuyển chọn không trùng lặp
+    for v in (online_videos or []) + (default_videos or []):
         if v.get("id") and v["id"] not in seen_ids:
             seen_ids.add(v["id"])
             combined.append(v)
