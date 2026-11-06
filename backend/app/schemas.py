@@ -92,6 +92,16 @@ class ScanDescriptionResponse(BaseModel):
     matched_vocab: List[DescriptionMatchedVocabItem]
 
 
+# === YOUTUBE ONLINE SEARCH & IMPORT SCHEMAS ===
+class YoutubeWordSearchRequest(BaseModel):
+    youtube_id: str
+    query: str
+
+class YoutubeOnlineImportRequest(BaseModel):
+    url_or_id: str
+    title: Optional[str] = None
+    topic: Optional[str] = None
+
 # === FLASHCARD SCHEMAS ===
 class FlashcardCreate(BaseModel):
     word: str

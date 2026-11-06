@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .database import engine, Base, get_db
-from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos, description_service
+from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos, description_service, youtube_service
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -321,6 +321,75 @@ def scan_online_youtube_description_vocab(req: schemas.OnlineYoutubeScanRequest)
     except Exception as e:
         logger.error(f"Lỗi khi quét từ vựng YouTube online: {e}")
         raise HTTPException(status_code=500, detail=f"Không thể quét từ vựng video YouTube: {str(e)}")
+
+
+@app.get("/api/youtube/search-videos")
+def search_youtube_videos(
+    q: str = Query(..., description="Từ khóa tìm kiếm video trên YouTube"),
+    max_results: int = Query(6, ge=1, le=15)
+):
+    """Tìm kiếm danh sách video thực tế trên YouTube theo từ khóa tùy thích"""
+    try:
+        return youtube_service.search_youtube_videos_online(query=q, max_results=max_results)
+    except Exception as e:
+        logger.error(f"Lỗi khi tìm kiếm video YouTube: {e}")
+        raise HTTPException(status_code=500, detail=f"Lỗi tìm kiếm YouTube: {str(e)}")
+
+
+@app.post("/api/youtube/search-words")
+def search_words_in_youtube(req: schemas.YoutubeWordSearchRequest):
+    """
+    Tìm kiếm từ vựng trực tiếp trong bài nói của video YouTube mà không cần tải file về.
+    Trả về danh sách câu phát âm có mốc thời gian tua và gợi ý nghĩa tiếng Việt.
+    """
+    try:
+        return youtube_service.search_words_in_youtube_online(
+            youtube_id_or_url=req.youtube_id,
+            query=req.query
+        )
+    except Exception as e:
+        logger.error(f"Lỗi khi tìm từ trong video YouTube: {e}")
+        raise HTTPException(status_code=500, detail=f"Lỗi khi tìm kiếm từ vựng trong video: {str(e)}")
+
+
+@app.post("/api/youtube/import-online", response_model=schemas.VideoResponse)
+def import_online_youtube_video(
+    req: schemas.YoutubeOnlineImportRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Nạp nhanh một video YouTube vào kho bài học chỉ trong 1-2 giây mà KHÔNG CẦN TẢI VIDEO.
+    Lấy phụ đề tiếng Anh chính thức từ YouTube, lập chỉ mục câu & từ để tra cứu và tạo Flashcard.
+    """
+    try:
+        v_id = youtube_service.extract_youtube_id(req.url_or_id)
+        if not v_id:
+            raise HTTPException(status_code=400, detail="URL hoặc ID YouTube không hợp lệ")
+
+        # Lấy thông tin video và phụ đề
+        info = youtube_service.get_youtube_video_info_and_captions(v_id)
+        segments = info.get("segments", [])
+
+        title = req.title.strip() if req.title and req.title.strip() else info.get("title", f"YouTube Video ({v_id})")
+        assigned_topic = req.topic.strip() if req.topic and req.topic.strip() else topics.auto_detect_topic(title)
+
+        # Lưu vào Database với filepath là link embed của YouTube
+        video_record = crud.create_video_with_transcripts(
+            db=db,
+            title=title,
+            filename=f"youtube_{v_id}.mp4",
+            filepath=f"https://www.youtube.com/embed/{v_id}",
+            duration=info.get("duration", 0.0),
+            segments_data=segments,
+            topic=assigned_topic,
+            description=info.get("description", ""),
+            source_url=f"https://www.youtube.com/watch?v={v_id}"
+        )
+        logger.info(f"Đã nạp video YouTube online ID: {video_record.id} ({title})")
+        return video_record
+    except Exception as e:
+        logger.error(f"Lỗi khi nạp video YouTube online: {e}")
+        raise HTTPException(status_code=500, detail=f"Không thể nạp video YouTube online: {str(e)}")
 
 
 # ==================== VOCABULARY SEARCH ENDPOINTS ====================
