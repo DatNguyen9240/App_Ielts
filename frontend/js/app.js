@@ -59,6 +59,7 @@ const DOM = {
 
     // Video Player & Controls
     videoSelect: document.getElementById("videoSelect"),
+    deleteCurrentVideoBtn: document.getElementById("deleteCurrentVideoBtn"),
     mainVideo: document.getElementById("mainVideo"),
     mainYoutubePlayer: document.getElementById("mainYoutubePlayer"),
     videoPlaceholder: document.getElementById("videoPlaceholder"),
@@ -361,6 +362,17 @@ const API = {
         }
         const res = await fetch(url);
         if (!res.ok) throw new Error("Không thể tải danh sách video");
+        return await res.json();
+    },
+
+    async deleteVideo(videoId) {
+        const res = await fetch(`${API_BASE_URL}/api/videos/${videoId}`, {
+            method: "DELETE"
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || "Không thể xóa video");
+        }
         return await res.json();
     },
 
@@ -1673,6 +1685,35 @@ function setupEventListeners() {
     DOM.videoSelect.addEventListener("change", (e) => {
         if (e.target.value) selectVideo(e.target.value);
     });
+
+    // Nút xóa video đang chọn
+    if (DOM.deleteCurrentVideoBtn) {
+        DOM.deleteCurrentVideoBtn.addEventListener("click", async () => {
+            if (!state.currentVideo) {
+                showToast("Chưa có video nào để xóa!", "warning");
+                return;
+            }
+            const ok = await showConfirm({
+                title: "Xác nhận xóa Video",
+                message: `Bạn có chắc chắn muốn xóa video này khỏi kho bài học không?\n\n"${state.currentVideo.title}"\n\n(Toàn bộ câu phụ đề và mốc từ vựng của video này sẽ được dọn dẹp sạch sẽ)`,
+                confirmText: "Xóa video",
+                confirmColor: "rose",
+                icon: "fa-solid fa-trash-can"
+            });
+            if (!ok) return;
+
+            try {
+                const vidTitle = state.currentVideo.title;
+                await API.deleteVideo(state.currentVideo.id);
+                showToast(`Đã xóa video "${vidTitle}" thành công!`, "success", 3000);
+                state.currentVideo = null;
+                await loadVideos();
+                showMyVideosTab();
+            } catch (err) {
+                showToast("Lỗi khi xóa video: " + err.message, "error", 4000);
+            }
+        });
+    }
 
     // Time update listener on main player
     DOM.mainVideo.addEventListener("timeupdate", () => {

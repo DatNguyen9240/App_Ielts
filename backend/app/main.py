@@ -247,6 +247,29 @@ def get_video_detail(video_id: int, db: Session = Depends(get_db)):
     }
 
 
+@app.delete("/api/videos/{video_id}")
+def delete_video(video_id: int, db: Session = Depends(get_db)):
+    """Xóa một video khỏi kho bài học cá nhân"""
+    video = crud.get_video_by_id(db, video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail="Không tìm thấy video để xóa")
+
+    # Xóa file vật lý nếu là file upload cục bộ trong /uploads
+    if video.filepath and video.filepath.startswith("/uploads/"):
+        file_path = os.path.join(UPLOAD_DIR, video.filename)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                logger.info(f"Đã xóa file video vật lý: {file_path}")
+            except Exception as e:
+                logger.warning(f"Không thể xóa file vật lý {file_path}: {e}")
+
+    deleted_title = video.title
+    crud.delete_video(db, video_id)
+    logger.info(f"Đã xóa video ID: {video_id} ({deleted_title})")
+    return {"message": "Đã xóa video thành công", "video_id": video_id, "title": deleted_title}
+
+
 # ==================== DESCRIPTION VOCABULARY SCANNING ====================
 
 @app.get("/api/videos/{video_id}/description")

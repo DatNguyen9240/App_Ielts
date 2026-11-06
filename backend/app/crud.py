@@ -86,6 +86,16 @@ def update_video_description(db: Session, video_id: int, description: str, sourc
     return video
 
 
+def delete_video(db: Session, video_id: int) -> Optional[models.Video]:
+    """Xóa một video cùng toàn bộ câu (segments), mốc từ (words) và flashcard liên quan"""
+    video = get_video_by_id(db, video_id)
+    if not video:
+        return None
+    db.delete(video)
+    db.commit()
+    return video
+
+
 # ==================== VOCABULARY SEARCH ====================
 
 def search_vocabulary(db: Session, query_str: str, video_id: Optional[int] = None) -> List[schemas.SearchResultItem]:
