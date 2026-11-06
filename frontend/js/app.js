@@ -138,15 +138,20 @@ function highlightWordInText(sentence, wordToHighlight) {
 
 
 // ==================== API SERVICE ====================
+// Cấu hình URL Backend:
+// - Khi chạy Local hoặc Deploy trọn gói trên Railway: để trống ""
+// - Khi Deploy Frontend trên Vercel: điền URL Railway của bạn (ví dụ: "https://my-app.up.railway.app")
+const API_BASE_URL = window.API_BASE_URL || localStorage.getItem("API_BASE_URL") || "";
+
 const API = {
     async fetchVideos() {
-        const res = await fetch("/api/videos");
+        const res = await fetch(`${API_BASE_URL}/api/videos`);
         if (!res.ok) throw new Error("Không thể tải danh sách video");
         return await res.json();
     },
 
     async uploadVideo(formData) {
-        const res = await fetch("/api/videos/upload", {
+        const res = await fetch(`${API_BASE_URL}/api/videos/upload`, {
             method: "POST",
             body: formData
         });
@@ -158,7 +163,7 @@ const API = {
     },
 
     async processVideoFromUrl(data) {
-        const res = await fetch("/api/videos/from-url", {
+        const res = await fetch(`${API_BASE_URL}/api/videos/from-url`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data)
@@ -171,7 +176,7 @@ const API = {
     },
 
     async searchWords(query, videoId = null) {
-        let url = `/api/search?q=${encodeURIComponent(query)}`;
+        let url = `${API_BASE_URL}/api/search?q=${encodeURIComponent(query)}`;
         if (videoId) url += `&video_id=${videoId}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error("Lỗi khi tìm kiếm từ vựng");
@@ -180,7 +185,7 @@ const API = {
 
     async lookupWord(word, context = "") {
         try {
-            const url = `/api/dictionary/lookup?word=${encodeURIComponent(word)}&context=${encodeURIComponent(context)}`;
+            const url = `${API_BASE_URL}/api/dictionary/lookup?word=${encodeURIComponent(word)}&context=${encodeURIComponent(context)}`;
             const res = await fetch(url);
             if (!res.ok) return null;
             return await res.json();
@@ -191,13 +196,13 @@ const API = {
     },
 
     async fetchFlashcards() {
-        const res = await fetch("/api/flashcards");
+        const res = await fetch(`${API_BASE_URL}/api/flashcards`);
         if (!res.ok) throw new Error("Không thể tải danh sách Flashcards");
         return await res.json();
     },
 
     async createFlashcard(data) {
-        const res = await fetch("/api/flashcards", {
+        const res = await fetch(`${API_BASE_URL}/api/flashcards`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data)
@@ -207,7 +212,7 @@ const API = {
     },
 
     async updateFlashcard(cardId, data) {
-        const res = await fetch(`/api/flashcards/${cardId}`, {
+        const res = await fetch(`${API_BASE_URL}/api/flashcards/${cardId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data)
@@ -217,7 +222,7 @@ const API = {
     },
 
     async deleteFlashcard(cardId) {
-        const res = await fetch(`/api/flashcards/${cardId}`, {
+        const res = await fetch(`${API_BASE_URL}/api/flashcards/${cardId}`, {
             method: "DELETE"
         });
         if (!res.ok) throw new Error("Không thể xóa Flashcard");
@@ -294,7 +299,8 @@ function selectVideo(videoId) {
     DOM.totalDurationDisplay.innerText = formatTime(vid.duration);
 
     // Gán src cho HTML5 Video player (FastAPI StaticFiles phục vụ /uploads/...)
-    DOM.mainVideo.src = vid.filepath;
+    const fullVideoUrl = vid.filepath.startsWith("http") ? vid.filepath : `${API_BASE_URL}${vid.filepath}`;
+    DOM.mainVideo.src = fullVideoUrl;
     DOM.mainVideo.load();
 
     // Nếu đang có từ khóa tìm kiếm, tự động tìm kiếm trên video mới
@@ -521,7 +527,8 @@ function replayFlashcardVideo(card) {
     
     // Tìm video trong state hoặc lấy từ card
     const targetVideo = state.videos.find(v => v.id === card.video_id);
-    const videoUrl = targetVideo ? targetVideo.filepath : `/uploads/${card.video_filename}`;
+    let rawVideoUrl = targetVideo ? targetVideo.filepath : `/uploads/${card.video_filename}`;
+    const videoUrl = rawVideoUrl.startsWith("http") ? rawVideoUrl : `${API_BASE_URL}${rawVideoUrl}`;
 
     DOM.replayVideo.src = videoUrl;
     DOM.videoReplayModal.classList.remove("hidden");
