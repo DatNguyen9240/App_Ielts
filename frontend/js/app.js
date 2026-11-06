@@ -1007,18 +1007,41 @@ function renderTopicVocabCards(vocabs) {
     if (!DOM.topicVocabCardsGrid) return;
     DOM.topicVocabCardsGrid.innerHTML = "";
 
+    const hasGlobalVocabs = state.currentTopicVocabs && state.currentTopicVocabs.length > 0;
+    const isSearching = DOM.topicVocabSearchInput && DOM.topicVocabSearchInput.value.trim().length > 0;
+
     if (DOM.topicVocabCountBadge) {
-        DOM.topicVocabCountBadge.innerText = `${vocabs.length} từ vựng Band 8.0+`;
+        DOM.topicVocabCountBadge.innerText = `${(vocabs || []).length} từ vựng Band 8.0+`;
     }
 
     if (!vocabs || vocabs.length === 0) {
-        DOM.topicVocabCardsGrid.innerHTML = `
-            <div class="col-span-full py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 p-8 space-y-2">
-                <i class="fa-solid fa-book-open text-3xl text-slate-300"></i>
-                <p class="text-sm font-bold text-slate-600">Không tìm thấy từ vựng phù hợp</p>
-                <p class="text-xs text-slate-400">Hãy thử xóa bộ lọc tìm kiếm để xem lại toàn bộ từ vựng.</p>
-            </div>
-        `;
+        if (isSearching && hasGlobalVocabs) {
+            DOM.topicVocabCardsGrid.innerHTML = `
+                <div class="col-span-full py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 p-8 space-y-2">
+                    <i class="fa-solid fa-book-open text-3xl text-slate-300"></i>
+                    <p class="text-sm font-bold text-slate-600">Không tìm thấy từ vựng phù hợp</p>
+                    <p class="text-xs text-slate-400">Hãy thử xóa bộ lọc tìm kiếm để xem lại toàn bộ từ vựng.</p>
+                </div>
+            `;
+        } else {
+            DOM.topicVocabCardsGrid.innerHTML = `
+                <div class="col-span-full py-16 text-center bg-white rounded-2xl border border-dashed border-purple-200 p-8 space-y-4 shadow-sm">
+                    <div class="w-14 h-14 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center mx-auto text-2xl shadow-inner ring-4 ring-purple-50">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </div>
+                    <div class="space-y-1">
+                        <h4 class="text-base font-bold text-slate-800">Chưa có từ vựng cho chủ đề này</h4>
+                        <p class="text-xs text-slate-500 max-w-md mx-auto">Chủ đề này chưa có từ vựng. Bấm nút bên dưới để AI (Google Gemini) tự động phân tích và sinh trọn bộ từ vựng & câu ngữ cảnh Band 8.0+ cho bạn!</p>
+                    </div>
+                    <button type="button" id="emptyStateAiVocabBtn" class="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition inline-flex items-center space-x-2 shadow-md shadow-purple-600/30 cursor-pointer">
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i>
+                        <span>🤖 AI tạo từ vựng Band 8.0+ ngay</span>
+                    </button>
+                </div>
+            `;
+            const emptyAiBtn = DOM.topicVocabCardsGrid.querySelector("#emptyStateAiVocabBtn");
+            if (emptyAiBtn) emptyAiBtn.onclick = triggerGenerateAiVocab;
+        }
         return;
     }
 
