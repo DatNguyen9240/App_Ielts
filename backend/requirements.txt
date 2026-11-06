@@ -8,4 +8,5 @@ pydantic>=2.6.4
 aiofiles>=23.2.1
 imageio-ffmpeg>=0.5.1
 yt-dlp>=2024.3.10
+youtube-transcript-api>=1.2.0
 

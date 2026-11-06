@@ -297,55 +297,13 @@ def scan_youtube_online_vocab(
     if cache_key in _ONLINE_VOCAB_CACHE:
         return _ONLINE_VOCAB_CACHE[cache_key]
 
-    import yt_dlp
-    import urllib.request
-    import json
+    from . import youtube_service
 
     video_url = url or f"https://www.youtube.com/watch?v={youtube_id}"
-    video_title = title or "IELTS Video"
-    description = custom_description or ""
-    segments = []
-
-    # 1. Trích xuất thông tin & phụ đề từ YouTube
-    ydl_opts = {
-        'skip_download': True,
-        'quiet': True,
-        'no_warnings': True,
-        'socket_timeout': 10
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            if 'entries' in info and info['entries']:
-                info = info['entries'][0]
-
-            if not video_title or video_title == "IELTS Video":
-                video_title = info.get('title', video_title)
-
-            if not description:
-                description = info.get('description', '') or ''
-
-            # Lấy phụ đề tiếng Anh (auto-generated captions hoặc manual subtitles)
-            subs = info.get('automatic_captions', {}).get('en', []) or info.get('subtitles', {}).get('en', [])
-            json3_url = next((s['url'] for s in subs if s.get('ext') == 'json3'), None)
-
-            if json3_url:
-                req = urllib.request.Request(json3_url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    caption_data = json.loads(resp.read().decode('utf-8'))
-                    for ev in caption_data.get('events', []):
-                        segs = ev.get('segs', [])
-                        text = ''.join(s.get('utf8', '') for s in segs).strip().replace('\n', ' ')
-                        t_start = ev.get('tStartMs', 0) / 1000.0
-                        d_ms = ev.get('dDurationMs', 0) / 1000.0
-                        if text and len(text) > 1:
-                            segments.append({
-                                'text': text,
-                                'start_time': t_start,
-                                'end_time': t_start + d_ms
-                            })
-    except Exception as e:
-        logger.warning(f"Lỗi khi trích xuất phụ đề YouTube {youtube_id}: {e}")
+    video_info = youtube_service.get_youtube_video_info_and_captions(youtube_id or video_url)
+    video_title = title or video_info.get("title") or "IELTS Video"
+    description = custom_description or video_info.get("description", "")
+    segments = video_info.get("segments", [])
 
     # 2. Bóc tách từ vựng từ Description
     candidates = extract_candidate_vocab_from_text(description)

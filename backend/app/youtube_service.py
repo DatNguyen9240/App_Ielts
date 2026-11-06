@@ -71,56 +71,55 @@ def get_youtube_video_info_and_captions(youtube_id_or_url: str) -> Dict[str, Any
             info_res["description"] = info.get("description") or ""
             info_res["thumbnail"] = info.get("thumbnail") or f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg"
 
-            # Tìm phụ đề tiếng Anh (hỗ trợ en, en-US, en-GB, en-orig, ...)
-            auto_caps = info.get("automatic_captions", {}) or {}
-            sub_caps = info.get("subtitles", {}) or {}
-            subs = []
-            for k in ["en", "en-US", "en-GB", "en-CA", "en-orig"]:
-                if k in auto_caps:
-                    subs = auto_caps[k]
-                    break
-                if k in sub_caps:
-                    subs = sub_caps[k]
-                    break
+            # BƯỚC 1: LẤY PHỤ ĐỀ QUA YOUTUBETRANSCRIPTAPI (Ưu tiên cao nhất - Không bị lỗi HTTP 429)
+            try:
+                from youtube_transcript_api import YouTubeTranscriptApi
+                ytt_api = YouTubeTranscriptApi()
+                transcript = None
 
-            if not subs:
-                for lang_code, cap_list in {**auto_caps, **sub_caps}.items():
-                    if lang_code.lower().startswith("en"):
-                        subs = cap_list
-                        break
+                # Thử các ngôn ngữ ưu tiên: en, en-US, en-GB, en-orig, vi
+                for lang_pref in [('en', 'en-US', 'en-GB', 'en-orig'), ('en',), ('vi',)]:
+                    try:
+                        transcript = ytt_api.fetch(v_id, languages=lang_pref)
+                        if transcript:
+                            break
+                    except Exception:
+                        continue
 
-            json3_url = next((s["url"] for s in subs if s.get("ext") == "json3"), None)
-            vtt_url = next((s["url"] for s in subs if s.get("ext") == "vtt"), None) if not json3_url else None
+                # Nếu chưa được, thử lấy phụ đề đầu tiên bất kỳ
+                if not transcript:
+                    try:
+                        t_list = ytt_api.list(v_id)
+                        first_t = next(iter(t_list))
+                        transcript = first_t.fetch()
+                    except Exception:
+                        pass
 
-            if json3_url:
-                req = urllib.request.Request(json3_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    caption_data = json.loads(resp.read().decode("utf-8"))
+                if transcript:
                     segments = []
                     seg_id = 1
+                    for snippet in transcript:
+                        raw_text = getattr(snippet, 'text', '') or snippet.get('text', '')
+                        text = raw_text.replace('\n', ' ').strip()
+                        t_start = float(getattr(snippet, 'start', 0.0) or snippet.get('start', 0.0))
+                        d_duration = float(getattr(snippet, 'duration', 0.0) or snippet.get('duration', 0.0))
+                        t_end = t_start + d_duration
 
-                    for ev in caption_data.get("events", []):
-                        segs = ev.get("segs", [])
-                        text = "".join(s.get("utf8", "") for s in segs).strip().replace("\n", " ")
-                        t_start = ev.get("tStartMs", 0) / 1000.0
-                        d_ms = ev.get("dDurationMs", 0) / 1000.0
-                        t_end = t_start + d_ms
-
-                        if text and len(text) > 1 and not text.startswith("["):
-                            # Trích xuất các từ con trong câu (nếu có offset)
+                        if text and len(text) > 1 and not text.startswith('['):
                             words_list = []
-                            for s in segs:
-                                w_text = s.get("utf8", "").strip()
-                                if w_text and len(w_text) > 0:
-                                    w_offset = (s.get("tOffsetMs", 0)) / 1000.0
-                                    w_start = t_start + w_offset
-                                    clean_w = re.sub(r'^[^\w]+|[^\w]+$', '', w_text).lower()
-                                    if clean_w:
+                            words_raw = text.split()
+                            if words_raw:
+                                w_step = d_duration / len(words_raw)
+                                for idx, w in enumerate(words_raw):
+                                    cw = re.sub(r'^[^\w]+|[^\w]+$', '', w).lower()
+                                    if cw:
+                                        w_s = round(t_start + idx * w_step, 2)
+                                        w_e = round(w_s + min(w_step, 0.4), 2)
                                         words_list.append({
-                                            "word": clean_w,
-                                            "display_word": w_text,
-                                            "start_time": round(w_start, 2),
-                                            "end_time": round(w_start + 0.35, 2)
+                                            "word": cw,
+                                            "display_word": w,
+                                            "start_time": w_s,
+                                            "end_time": w_e
                                         })
 
                             segments.append({
@@ -132,20 +131,83 @@ def get_youtube_video_info_and_captions(youtube_id_or_url: str) -> Dict[str, Any
                             })
                             seg_id += 1
 
-                    info_res["segments"] = segments
+                    if segments:
+                        info_res["segments"] = segments
+                        logger.info(f"Đã trích xuất thành công {len(segments)} câu phụ đề cho video {v_id} qua YouTubeTranscriptApi")
+            except Exception as e_ytt:
+                logger.warning(f"YouTubeTranscriptApi không lấy được: {e_ytt}")
 
-            elif vtt_url:
-                req = urllib.request.Request(vtt_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    vtt_text = resp.read().decode("utf-8")
-                    segments = []
-                    seg_id = 1
-                    # Parse basic VTT blocks
-                    blocks = re.split(r'\n\s*\n', vtt_text)
-                    for blk in blocks:
-                        m = re.search(r'(\d{2}:)?(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}:)?(\d{2}):(\d{2})\.(\d{3})', blk)
-                        if m:
-                            # Parse start and end times
+            # BƯỚC 2: NẾU BƯỚC 1 CHƯA CÓ, THỬ DÙNG YT-DLP VÀ TIMEDTEXT
+            if not info_res["segments"]:
+                auto_caps = info.get("automatic_captions", {}) or {}
+                sub_caps = info.get("subtitles", {}) or {}
+                subs = []
+                for k in ["en", "en-US", "en-GB", "en-CA", "en-orig"]:
+                    if k in auto_caps:
+                        subs = auto_caps[k]
+                        break
+                    if k in sub_caps:
+                        subs = sub_caps[k]
+                        break
+
+                if not subs:
+                    for lang_code, cap_list in {**auto_caps, **sub_caps}.items():
+                        if lang_code.lower().startswith("en"):
+                            subs = cap_list
+                            break
+
+                json3_url = next((s["url"] for s in subs if s.get("ext") == "json3"), None)
+                vtt_url = next((s["url"] for s in subs if s.get("ext") == "vtt"), None) if not json3_url else None
+
+                if json3_url:
+                    req = urllib.request.Request(json3_url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        caption_data = json.loads(resp.read().decode("utf-8"))
+                        segments = []
+                        seg_id = 1
+
+                        for ev in caption_data.get("events", []):
+                            segs = ev.get("segs", [])
+                            text = "".join(s.get("utf8", "") for s in segs).strip().replace("\n", " ")
+                            t_start = ev.get("tStartMs", 0) / 1000.0
+                            d_ms = ev.get("dDurationMs", 0) / 1000.0
+                            t_end = t_start + d_ms
+
+                            if text and len(text) > 1 and not text.startswith("["):
+                                words_list = []
+                                for s in segs:
+                                    w_text = s.get("utf8", "").strip()
+                                    if w_text and len(w_text) > 0:
+                                        w_offset = (s.get("tOffsetMs", 0)) / 1000.0
+                                        w_start = t_start + w_offset
+                                        clean_w = re.sub(r'^[^\w]+|[^\w]+$', '', w_text).lower()
+                                        if clean_w:
+                                            words_list.append({
+                                                "word": clean_w,
+                                                "display_word": w_text,
+                                                "start_time": round(w_start, 2),
+                                                "end_time": round(w_start + 0.35, 2)
+                                            })
+
+                                segments.append({
+                                    "id": seg_id,
+                                    "text": text,
+                                    "start_time": round(t_start, 2),
+                                    "end_time": round(t_end, 2),
+                                    "words": words_list
+                                })
+                                seg_id += 1
+
+                        info_res["segments"] = segments
+
+                elif vtt_url:
+                    req = urllib.request.Request(vtt_url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        vtt_text = resp.read().decode("utf-8")
+                        segments = []
+                        seg_id = 1
+                        blocks = re.split(r'\n\s*\n', vtt_text)
+                        for blk in blocks:
                             lines = [ln.strip() for ln in blk.strip().splitlines() if not re.match(r'^\d+$|-->|WEBVTT', ln)]
                             clean_sentence = " ".join(lines).strip()
                             clean_sentence = re.sub(r'<[^>]+>', '', clean_sentence)
@@ -158,7 +220,7 @@ def get_youtube_video_info_and_captions(youtube_id_or_url: str) -> Dict[str, Any
                                     "words": []
                                 })
                                 seg_id += 1
-                    info_res["segments"] = segments
+                        info_res["segments"] = segments
 
     except Exception as e:
         logger.warning(f"Lỗi khi trích xuất phụ đề YouTube {v_id}: {e}")

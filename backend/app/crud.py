@@ -1,7 +1,7 @@
 import json
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, desc
+from sqlalchemy import or_, desc, case
 from . import models, schemas
 
 # ==================== VIDEO & TRANSCRIPT CRUD ====================
@@ -98,6 +98,39 @@ def search_vocabulary(db: Session, query_str: str, video_id: Optional[int] = Non
     if not clean_query:
         return []
 
+    # Cơ chế tự phục hồi phụ đề cho video YouTube online nếu chưa có segments
+    if video_id:
+        v_check = get_video_by_id(db, video_id)
+        if v_check and (not v_check.segments or len(v_check.segments) == 0):
+            if v_check.filepath and ("youtube.com" in v_check.filepath or "youtu.be" in v_check.filepath):
+                try:
+                    from . import youtube_service
+                    v_id = youtube_service.extract_youtube_id(v_check.filepath)
+                    if v_id:
+                        info = youtube_service.get_youtube_video_info_and_captions(v_id)
+                        for seg in info.get("segments", []):
+                            db_seg = models.TranscriptSegment(
+                                video_id=v_check.id,
+                                text=seg["text"],
+                                start_time=seg["start_time"],
+                                end_time=seg["end_time"]
+                            )
+                            db.add(db_seg)
+                            db.flush()
+                            for w in seg.get("words", []):
+                                db_w = models.TranscriptWord(
+                                    video_id=v_check.id,
+                                    segment_id=db_seg.id,
+                                    word=w["word"],
+                                    display_word=w["display_word"],
+                                    start_time=w["start_time"],
+                                    end_time=w["end_time"]
+                                )
+                                db.add(db_w)
+                        db.commit()
+                except Exception as e:
+                    pass
+
     # Truy vấn bảng TranscriptWord kết hợp Segment và Video
     query = (
         db.query(
@@ -113,7 +146,9 @@ def search_vocabulary(db: Session, query_str: str, video_id: Optional[int] = Non
     if video_id:
         query = query.filter(models.TranscriptWord.video_id == video_id)
 
-    results = query.order_by(models.TranscriptWord.start_time.asc()).limit(50).all()
+    # Ưu tiên từ khớp chính xác (exact match) lên đầu kết quả
+    exact_match_priority = case((models.TranscriptWord.word == clean_query, 1), else_=2)
+    results = query.order_by(exact_match_priority.asc(), models.TranscriptWord.start_time.asc()).limit(50).all()
 
     items: List[schemas.SearchResultItem] = []
     seen_matches = set() # Tránh trùng lặp mốc thời gian quá gần nhau
