@@ -493,7 +493,7 @@ const API = {
         return await res.json();
     },
 
-    async searchYoutubeVideos(query, maxResults = 6) {
+    async searchYoutubeVideos(query, maxResults = 24) {
         const res = await fetch(`${API_BASE_URL}/api/youtube/search-videos?q=${encodeURIComponent(query)}&max_results=${maxResults}`);
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
@@ -676,11 +676,36 @@ async function loadAndRenderTopicVideos(topic) {
     DOM.topicVideosGrid.innerHTML = "";
 
     try {
+        // 1. Tải trước các video bài mẫu (hiển thị nhanh)
         const data = await API.fetchTopicVideos(topic.id);
-        const videos = data.videos || [];
+        const curated = data.videos || [];
+        let allVideos = [...curated];
+
+        if (allVideos.length > 0) {
+            renderVideoCards(allVideos, topic.title);
+        }
+
+        // 2. Tìm kiếm tự động thêm 24 video thực tế phong phú trên YouTube theo chủ đề
+        try {
+            const topicKeyword = topic.short_title || topic.title || "IELTS Speaking";
+            const ytVideos = await API.searchYoutubeVideos(topicKeyword, 24);
+            if (ytVideos && ytVideos.length > 0) {
+                const seenIds = new Set(allVideos.map(v => v.id));
+                for (const v of ytVideos) {
+                    if (!seenIds.has(v.id)) {
+                        seenIds.add(v.id);
+                        allVideos.push(v);
+                    }
+                }
+                renderVideoCards(allVideos, topic.title);
+            }
+        } catch (eYt) {
+            console.warn("Không thể tải thêm video YouTube tự động:", eYt);
+        }
+
         DOM.topicVideosLoading.classList.add("hidden");
 
-        if (videos.length === 0) {
+        if (allVideos.length === 0) {
             DOM.topicVideosGrid.innerHTML = `
                 <div class="col-span-full py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 p-8 space-y-3">
                     <i class="fa-solid fa-video-slash text-4xl text-slate-300"></i>
@@ -688,10 +713,7 @@ async function loadAndRenderTopicVideos(topic) {
                     <p class="text-xs text-slate-400">Bạn có thể dán đường link video YouTube bất kỳ để thêm vào chủ đề này.</p>
                 </div>
             `;
-            return;
         }
-
-        renderVideoCards(videos, topic.title);
     } catch (err) {
         console.error("Lỗi nạp video chủ đề:", err);
         DOM.topicVideosLoading.classList.add("hidden");
@@ -800,7 +822,7 @@ async function searchYoutubeVideosOnline(query) {
     }
 
     try {
-        const videos = await API.searchYoutubeVideos(cleanQ, 9);
+        const videos = await API.searchYoutubeVideos(cleanQ, 24);
         DOM.topicVideosLoading.classList.add("hidden");
 
         if (!videos || videos.length === 0) {

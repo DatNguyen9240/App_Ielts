@@ -349,7 +349,7 @@ def scan_online_youtube_description_vocab(req: schemas.OnlineYoutubeScanRequest)
 @app.get("/api/youtube/search-videos")
 def search_youtube_videos(
     q: str = Query(..., description="Từ khóa tìm kiếm video trên YouTube"),
-    max_results: int = Query(6, ge=1, le=15)
+    max_results: int = Query(24, ge=1, le=50)
 ):
     """Tìm kiếm danh sách video thực tế trên YouTube theo từ khóa tùy thích"""
     try:

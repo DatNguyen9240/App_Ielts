@@ -282,15 +282,23 @@ def search_words_in_youtube_online(youtube_id_or_url: str, query: str) -> Dict[s
     }
 
 
-def search_youtube_videos_online(query: str, max_results: int = 6) -> List[Dict[str, Any]]:
-    """Tìm kiếm danh sách video thực tế trên YouTube theo từ khóa tùy thích"""
+def search_youtube_videos_online(query: str, max_results: int = 24) -> List[Dict[str, Any]]:
+    """Tìm kiếm danh sách video thực tế trên YouTube theo từ khóa tùy thích (15-30 kết quả phong phú)"""
     import yt_dlp
-    search_query = f"ytsearch{max_results}:IELTS Speaking {query}"
+    clean_q = query.strip()
+    if not clean_q:
+        return []
+
+    if re.search(r'ielts', clean_q, re.IGNORECASE):
+        search_query = f"ytsearch{max_results}:{clean_q}"
+    else:
+        search_query = f"ytsearch{max_results}:IELTS Speaking {clean_q}"
+
     ydl_opts = {
         'extract_flat': True,
         'quiet': True,
         'no_warnings': True,
-        'socket_timeout': 8
+        'socket_timeout': 12
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -298,20 +306,26 @@ def search_youtube_videos_online(query: str, max_results: int = 6) -> List[Dict[
             items = []
             for entry in res.get('entries', []):
                 v_id = entry.get('id', '')
-                title = entry.get('title', 'IELTS Video')
+                if not v_id or len(v_id) != 11:
+                    continue
+
+                title = entry.get('title', 'IELTS Speaking Video')
                 channel = entry.get('channel') or entry.get('uploader') or 'YouTube'
                 duration = int(entry.get('duration') or 0)
                 url = entry.get('url') or f"https://www.youtube.com/watch?v={v_id}"
-                
-                if duration > 60:
-                    items.append({
-                        "id": v_id,
-                        "title": title,
-                        "channel": channel,
-                        "url": url,
-                        "thumbnail": f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
-                        "duration": duration
-                    })
+
+                # Bỏ qua các video quá ngắn (Shorts < 45s) nếu có duration
+                if 0 < duration < 45:
+                    continue
+
+                items.append({
+                    "id": v_id,
+                    "title": title,
+                    "channel": channel,
+                    "url": url,
+                    "thumbnail": f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
+                    "duration": duration if duration > 0 else 600
+                })
             return items
     except Exception as e:
         logger.warning(f"Lỗi khi tìm kiếm video YouTube: {e}")
