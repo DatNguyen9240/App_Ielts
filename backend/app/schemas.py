@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Any, Union
 from pydantic import BaseModel
 
 # === VIDEO SCHEMAS ===
@@ -65,6 +65,12 @@ class ScanDescriptionRequest(BaseModel):
     description_text: Optional[str] = None
     source_url: Optional[str] = None
 
+class OnlineYoutubeScanRequest(BaseModel):
+    youtube_id: str
+    url: Optional[str] = None
+    title: Optional[str] = None
+    custom_description: Optional[str] = None
+
 class DescriptionMatchedVocabItem(BaseModel):
     word: str
     raw_entry: Optional[str] = None
@@ -79,7 +85,7 @@ class DescriptionMatchedVocabItem(BaseModel):
     occurrences_count: int = 1
 
 class ScanDescriptionResponse(BaseModel):
-    video_id: int
+    video_id: Union[int, str]
     video_title: str
     description: str
     total_found: int

@@ -608,10 +608,16 @@
 
             <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1 text-xs">
                 <span class="text-slate-400 text-[11px]"><i class="fa-solid fa-headphones mr-1 text-indigo-400"></i> Xem video thực tế để luyện nghe và ngữ điệu tự nhiên.</span>
-                <button id="watchModalImportBtn" class="px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-900 transition flex items-center space-x-1.5 whitespace-nowrap">
-                    <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i>
-                    <span>Học từ vựng video này (Chạy Whisper)</span>
-                </button>
+                <div class="flex items-center space-x-2">
+                    <button id="watchModalDescBtn" class="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-900/30 transition flex items-center space-x-1.5 whitespace-nowrap">
+                        <i class="fa-solid fa-list-check"></i>
+                        <span>Từ vựng ở Description</span>
+                    </button>
+                    <button id="watchModalImportBtn" class="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-900 transition flex items-center space-x-1.5 whitespace-nowrap">
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i>
+                        <span>Học bằng Whisper</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>

@@ -304,6 +304,25 @@ def scan_video_description_vocab(
         raise HTTPException(status_code=500, detail=f"Không thể quét từ vựng description: {str(e)}")
 
 
+@app.post("/api/youtube/scan-description", response_model=schemas.ScanDescriptionResponse)
+def scan_online_youtube_description_vocab(req: schemas.OnlineYoutubeScanRequest):
+    """
+    Trích xuất từ vựng từ Description của video YouTube trên các Tab chủ đề IELTS
+    và dò tìm câu nói thực tế trong video qua phụ đề YouTube mà không cần tải video về máy.
+    """
+    try:
+        res = description_service.scan_youtube_online_vocab(
+            youtube_id=req.youtube_id,
+            url=req.url,
+            title=req.title,
+            custom_description=req.custom_description
+        )
+        return res
+    except Exception as e:
+        logger.error(f"Lỗi khi quét từ vựng YouTube online: {e}")
+        raise HTTPException(status_code=500, detail=f"Không thể quét từ vựng video YouTube: {str(e)}")
+
+
 # ==================== VOCABULARY SEARCH ENDPOINTS ====================
 
 @app.get("/api/search", response_model=List[schemas.SearchResultItem])

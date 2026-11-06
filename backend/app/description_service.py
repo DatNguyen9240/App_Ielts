@@ -278,3 +278,133 @@ def match_description_vocab_with_video(
         "total_found": len(matched_results),
         "matched_vocab": matched_results
     }
+
+
+# Bộ nhớ đệm quét từ vựng online cho video YouTube trên các tab chủ đề
+_ONLINE_VOCAB_CACHE: Dict[str, Dict[str, Any]] = {}
+
+def scan_youtube_online_vocab(
+    youtube_id: str,
+    url: Optional[str] = None,
+    title: Optional[str] = None,
+    custom_description: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Trích xuất từ vựng trong Description và dò câu ngữ cảnh thực tế của video YouTube trực tuyến (Topic Videos)
+    qua phụ đề / captions của YouTube hoặc mô tả video mà không cần tải file về máy.
+    """
+    cache_key = f"{youtube_id}_{hash(custom_description) if custom_description else 'default'}"
+    if cache_key in _ONLINE_VOCAB_CACHE:
+        return _ONLINE_VOCAB_CACHE[cache_key]
+
+    import yt_dlp
+    import urllib.request
+    import json
+
+    video_url = url or f"https://www.youtube.com/watch?v={youtube_id}"
+    video_title = title or "IELTS Video"
+    description = custom_description or ""
+    segments = []
+
+    # 1. Trích xuất thông tin & phụ đề từ YouTube
+    ydl_opts = {
+        'skip_download': True,
+        'quiet': True,
+        'no_warnings': True,
+        'socket_timeout': 10
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            if 'entries' in info and info['entries']:
+                info = info['entries'][0]
+
+            if not video_title or video_title == "IELTS Video":
+                video_title = info.get('title', video_title)
+
+            if not description:
+                description = info.get('description', '') or ''
+
+            # Lấy phụ đề tiếng Anh (auto-generated captions hoặc manual subtitles)
+            subs = info.get('automatic_captions', {}).get('en', []) or info.get('subtitles', {}).get('en', [])
+            json3_url = next((s['url'] for s in subs if s.get('ext') == 'json3'), None)
+
+            if json3_url:
+                req = urllib.request.Request(json3_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    caption_data = json.loads(resp.read().decode('utf-8'))
+                    for ev in caption_data.get('events', []):
+                        segs = ev.get('segs', [])
+                        text = ''.join(s.get('utf8', '') for s in segs).strip().replace('\n', ' ')
+                        t_start = ev.get('tStartMs', 0) / 1000.0
+                        d_ms = ev.get('dDurationMs', 0) / 1000.0
+                        if text and len(text) > 1:
+                            segments.append({
+                                'text': text,
+                                'start_time': t_start,
+                                'end_time': t_start + d_ms
+                            })
+    except Exception as e:
+        logger.warning(f"Lỗi khi trích xuất phụ đề YouTube {youtube_id}: {e}")
+
+    # 2. Bóc tách từ vựng từ Description
+    candidates = extract_candidate_vocab_from_text(description)
+    matched_results: List[Dict[str, Any]] = []
+    processed_words_lower: Set[str] = set()
+
+    for item in candidates:
+        cand_word = item["word"]
+        cand_lower = cand_word.lower()
+
+        if cand_lower in processed_words_lower:
+            continue
+
+        matched_segment = None
+        occurrences = 0
+
+        # Nếu có phụ đề thì dò trong phụ đề video
+        if segments:
+            pattern = re.compile(rf'\b{re.escape(cand_word)}\b', re.IGNORECASE)
+            for seg in segments:
+                if pattern.search(seg['text']):
+                    occurrences += 1
+                    if not matched_segment:
+                        matched_segment = seg
+
+        # Dù có phụ đề hay không, nếu là từ có cấu trúc bài học trong description thì vẫn lấy
+        if matched_segment or item.get("is_structured"):
+            processed_words_lower.add(cand_lower)
+            ctx = matched_segment['text'] if matched_segment else f"Từ vựng trọng tâm trong bài: {cand_word}"
+            s_time = matched_segment['start_time'] if matched_segment else 0.0
+            e_time = matched_segment['end_time'] if matched_segment else 0.0
+
+            dict_data = translation_service.lookup_word_vietnamese(word=cand_word, context_sentence=ctx)
+            vn_meaning = dict_data.get("meaning") or ""
+            vn_suggestions = dict_data.get("suggestions") or []
+
+            matched_results.append({
+                "word": cand_word,
+                "raw_entry": item.get("word"),
+                "definition_in_desc": item.get("definition_in_desc"),
+                "vietnamese_meaning": vn_meaning,
+                "vietnamese_suggestions": vn_suggestions,
+                "context_sentence": ctx,
+                "sentence_start_time": s_time,
+                "sentence_end_time": e_time,
+                "word_start_time": s_time,
+                "word_end_time": e_time,
+                "occurrences_count": max(1, occurrences)
+            })
+
+    matched_results.sort(key=lambda x: x["sentence_start_time"])
+
+    result = {
+        "video_id": youtube_id,
+        "video_title": video_title,
+        "description": description,
+        "total_found": len(matched_results),
+        "matched_vocab": matched_results
+    }
+    _ONLINE_VOCAB_CACHE[cache_key] = result
+    return result
+
