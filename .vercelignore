@@ -1,0 +1,11 @@
+# Bỏ qua toàn bộ mã nguồn Python và môi trường ảo để Vercel không cố đóng gói Lambda Function
+backend/
+venv/
+.venv/
+*.py
+*.pyc
+__pycache__/
+Dockerfile
+railway.json
+seed_demo_data.py
+run.py
