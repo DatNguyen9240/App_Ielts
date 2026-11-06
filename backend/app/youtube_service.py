@@ -317,3 +317,59 @@ def search_youtube_videos_online(query: str, max_results: int = 6) -> List[Dict[
         logger.warning(f"Lỗi khi tìm kiếm video YouTube: {e}")
         return []
 
+
+def fetch_youtube_pinned_or_top_comments(youtube_id_or_url: str) -> Dict[str, Any]:
+    """
+    Trích xuất bình luận được ghim (pinned comment) hoặc bình luận tác giả từ YouTube.
+    Dùng khi Description của video không có từ vựng để học.
+    """
+    v_id = extract_youtube_id(youtube_id_or_url)
+    import yt_dlp
+
+    ydl_opts = {
+        'skip_download': True,
+        'quiet': True,
+        'getcomments': True,
+        'extractor_args': {'youtube': {'max_comments': ['25', 'all', '1', '1']}},
+        'socket_timeout': 10
+    }
+
+    res = {
+        "youtube_id": v_id,
+        "pinned_comment": "",
+        "uploader_comment": "",
+        "best_vocab_comment": "",
+        "combined_text": ""
+    }
+
+    try:
+        video_url = f"https://www.youtube.com/watch?v={v_id}"
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            comments = info.get('comments', [])
+
+            for c in comments:
+                text = c.get('text', '').strip()
+                if not text:
+                    continue
+
+                if c.get('is_pinned') and not res["pinned_comment"]:
+                    res["pinned_comment"] = text
+
+                if c.get('author_is_uploader') and not res["uploader_comment"]:
+                    res["uploader_comment"] = text
+
+                # Kiểm tra xem comment có chứa định dạng bài học (timestamps 01:23, đánh số 1. Word, gạch đầu dòng)
+                has_timestamps = bool(re.search(r'\d{1,2}:\d{2}', text))
+                has_vocab_list = bool(re.search(r'(?:\d+[\.\)]|\-|\*|•)\s*[A-Za-z\s]{3,30}[:–—]', text))
+                if (has_timestamps or has_vocab_list) and not res["best_vocab_comment"]:
+                    res["best_vocab_comment"] = text
+
+            # Ưu tiên bình luận ghim, sau đó đến uploader, sau đó đến comment có từ vựng
+            chosen = res["pinned_comment"] or res["uploader_comment"] or res["best_vocab_comment"]
+            res["combined_text"] = chosen
+    except Exception as e:
+        logger.warning(f"Lỗi khi lấy bình luận YouTube {v_id}: {e}")
+
+    return res
+

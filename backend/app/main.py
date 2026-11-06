@@ -375,6 +375,16 @@ def search_words_in_youtube(req: schemas.YoutubeWordSearchRequest):
         raise HTTPException(status_code=500, detail=f"Lỗi khi tìm kiếm từ vựng trong video: {str(e)}")
 
 
+@app.get("/api/youtube/{youtube_id}/pinned-comment")
+def get_youtube_pinned_comment(youtube_id: str):
+    """Lấy nội dung bình luận được ghim hoặc bình luận tác giả từ YouTube khi Description không có từ vựng"""
+    try:
+        return youtube_service.fetch_youtube_pinned_or_top_comments(youtube_id)
+    except Exception as e:
+        logger.error(f"Lỗi khi lấy bình luận ghim cho {youtube_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Không thể lấy bình luận ghim: {str(e)}")
+
+
 @app.post("/api/youtube/import-online", response_model=schemas.VideoResponse)
 def import_online_youtube_video(
     req: schemas.YoutubeOnlineImportRequest,

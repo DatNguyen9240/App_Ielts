@@ -194,6 +194,20 @@ def match_description_vocab_with_video(
 
     # 3. Trích xuất danh sách ứng viên từ Description
     candidates = extract_candidate_vocab_from_text(final_desc)
+    structured_count = sum(1 for c in candidates if c.get("is_structured"))
+
+    # NẾU DESCRIPTION KHÔNG CÓ TỪ VỰNG CÓ CẤU TRÚC: Tự động lấy bình luận được ghim từ YouTube
+    if structured_count == 0 and video.source_url:
+        try:
+            from . import youtube_service
+            comments_res = youtube_service.fetch_youtube_pinned_or_top_comments(video.source_url)
+            pinned_text = comments_res.get("combined_text") or comments_res.get("pinned_comment")
+            if pinned_text:
+                logger.info(f"Description không có từ vựng, tự động bổ sung Bình luận ghim cho video {video.id}")
+                final_desc = (final_desc + "\n\n📌 [BÌNH LUẬN ĐƯỢC GHIM TỪ TÁC GIẢ]:\n" + pinned_text).strip()
+                candidates = extract_candidate_vocab_from_text(final_desc)
+        except Exception as e_comm:
+            logger.warning(f"Không thể lấy bình luận ghim: {e_comm}")
 
     matched_results: List[schemas.DescriptionMatchedVocabItem] = []
     processed_words_lower: Set[str] = set()
@@ -307,6 +321,20 @@ def scan_youtube_online_vocab(
 
     # 2. Bóc tách từ vựng từ Description
     candidates = extract_candidate_vocab_from_text(description)
+    structured_count = sum(1 for c in candidates if c.get("is_structured"))
+
+    # NẾU DESCRIPTION KHÔNG CÓ TỪ VỰNG: Tự động lấy bình luận ghim của video
+    if structured_count == 0:
+        try:
+            comments_res = youtube_service.fetch_youtube_pinned_or_top_comments(youtube_id)
+            pinned_text = comments_res.get("combined_text") or comments_res.get("pinned_comment")
+            if pinned_text:
+                logger.info(f"Description online {youtube_id} không có từ vựng, tự động bổ sung Bình luận ghim")
+                description = (description + "\n\n📌 [BÌNH LUẬN ĐƯỢC GHIM TỪ TÁC GIẢ]:\n" + pinned_text).strip()
+                candidates = extract_candidate_vocab_from_text(description)
+        except Exception as e_comm:
+            logger.warning(f"Không thể lấy bình luận ghim cho {youtube_id}: {e_comm}")
+
     matched_results: List[Dict[str, Any]] = []
     processed_words_lower: Set[str] = set()
 

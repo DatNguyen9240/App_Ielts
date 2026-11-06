@@ -156,6 +156,7 @@ const DOM = {
     toggleDescExpandText: document.getElementById("toggleDescExpandText"),
     toggleDescExpandIcon: document.getElementById("toggleDescExpandIcon"),
     descSourceUrlNotice: document.getElementById("descSourceUrlNotice"),
+    fetchPinnedCommentBtn: document.getElementById("fetchPinnedCommentBtn"),
     fetchDescFromYoutubeBtn: document.getElementById("fetchDescFromYoutubeBtn"),
     runScanDescBtn: document.getElementById("runScanDescBtn"),
     descScanLoading: document.getElementById("descScanLoading"),
@@ -523,6 +524,15 @@ const API = {
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || "Không thể nạp video YouTube online");
+        }
+        return await res.json();
+    },
+
+    async fetchPinnedComment(youtubeId) {
+        const res = await fetch(`${API_BASE_URL}/api/youtube/${encodeURIComponent(youtubeId)}/pinned-comment`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || "Không thể lấy bình luận ghim");
         }
         return await res.json();
     }
@@ -2064,6 +2074,47 @@ function setupEventListeners() {
                 }
             } catch (err) {
                 showToast("Lỗi khi tải mô tả: " + err.message, "error");
+            }
+        });
+    }
+    if (DOM.fetchPinnedCommentBtn) {
+        DOM.fetchPinnedCommentBtn.addEventListener("click", async () => {
+            const isOnline = state.activeScanningTarget && state.activeScanningTarget.type === "online";
+            const target = isOnline ? state.activeScanningTarget.video : state.currentVideo;
+
+            let youtubeId = null;
+            if (isOnline && target) {
+                youtubeId = target.id;
+            } else if (target && target.source_url) {
+                const m = target.source_url.match(/(?:v=|\/v\/|youtu\.be\/|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{11})/);
+                if (m) youtubeId = m[1];
+            } else if (target && target.filepath && target.filepath.includes("youtube.com/embed/")) {
+                const m = target.filepath.match(/\/embed\/([A-Za-z0-9_-]{11})/);
+                if (m) youtubeId = m[1];
+            }
+
+            if (!youtubeId) {
+                showToast("Video này không có link YouTube để lấy bình luận!", "warning");
+                return;
+            }
+
+            showToast("Đang tìm bình luận được ghim từ YouTube...", "info", 2000);
+            try {
+                const commentData = await API.fetchPinnedComment(youtubeId);
+                const pinnedText = commentData.combined_text || commentData.pinned_comment || commentData.uploader_comment;
+
+                if (pinnedText) {
+                    const currentText = DOM.descVocabTextarea.value.trim();
+                    const banner = `\n\n📌 [BÌNH LUẬN ĐƯỢC GHIM TỪ TÁC GIẢ]:\n${pinnedText}`;
+                    DOM.descVocabTextarea.value = currentText ? `${currentText}${banner}` : pinnedText;
+
+                    showToast("📌 Đã nạp bình luận được ghim! Đang dò từ vựng...", "success", 2500);
+                    await executeDescriptionScan();
+                } else {
+                    showToast("Video này không có bình luận nào được ghim từ tác giả.", "warning", 3500);
+                }
+            } catch (err) {
+                showToast("Lỗi khi lấy bình luận ghim: " + err.message, "error", 4000);
             }
         });
     }
