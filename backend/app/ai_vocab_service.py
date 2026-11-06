@@ -57,6 +57,15 @@ def get_gemini_api_key() -> str:
 def save_gemini_api_key(api_key: str) -> bool:
     """Lưu Gemini API Key vào ai_config.json để sử dụng lâu dài"""
     clean_key = (api_key or "").strip()
+    
+    # Tự động trích xuất mã API Key nếu người dùng vô tình dán lẫn văn bản hướng dẫn
+    import re
+    match = re.search(r'(AIzaSy[A-Za-z0-9_-]{33}|AQ\.[A-Za-z0-9_\-\.]{30,80})', clean_key)
+    if match:
+        clean_key = match.group(0)
+    elif " " in clean_key or "\n" in clean_key or len(clean_key) < 20:
+        raise ValueError("API Key không hợp lệ. Vui lòng vào aistudio.google.com/app/apikey và bấm nút 'Copy key' thực tế.")
+
     try:
         data = {}
         if os.path.exists(CONFIG_PATH):
@@ -125,6 +134,11 @@ def call_gemini_api(prompt: str, api_key: str) -> List[Dict[str, Any]]:
                 try:
                     err_json = resp.json().get("error", {})
                     msg = err_json.get("message", "")
+                    if "api key not valid" in msg.lower():
+                        raise RuntimeError(
+                            "API Key không hợp lệ (HTTP 400). Bạn đã dán nhầm chữ hướng dẫn thay vì mã key thực tế. "
+                            "Hãy vào aistudio.google.com/app/apikey, bấm nút 'Copy key' bên cạnh tên key và dán lại!"
+                        )
                     if "free tier is not available" in msg.lower() or "billing" in msg.lower():
                         raise RuntimeError(
                             "API Key này thuộc Google Cloud Project chưa bật Free Tier (HTTP 403). "

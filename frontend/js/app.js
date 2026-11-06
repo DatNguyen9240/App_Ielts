@@ -1294,9 +1294,17 @@ function closeGeminiKeyModal() {
  * Lưu Gemini API Key từ modal
  */
 async function saveGeminiApiKeyFromModal() {
-    const key = (DOM.geminiApiKeyInput?.value || "").trim();
-    if (!key || key.length < 10) {
-        showToast("Vui lòng nhập API Key hợp lệ từ Google AI Studio", "warning");
+    let key = (DOM.geminiApiKeyInput?.value || "").trim();
+
+    // 1. Tự động bóc tách mã Key nếu người dùng vô tình copy lẫn cả đoạn hướng dẫn
+    const keyMatch = key.match(/(AIzaSy[A-Za-z0-9_-]{33}|AQ\.[A-Za-z0-9_\-\.]{30,80})/);
+    if (keyMatch) {
+        key = keyMatch[0];
+    }
+
+    // 2. Kiểm tra tính hợp lệ: API Key không được chứa khoảng trắng hoặc ký tự tiếng Việt
+    if (!key || /\s/.test(key) || /[^\x20-\x7E]/.test(key) || key.length < 25) {
+        showToast("Nội dung vừa dán không phải là API Key! Bạn hãy vào aistudio.google.com/app/apikey và bấm nút 'Copy key' thực tế.", "warning", 6000);
         return;
     }
 
