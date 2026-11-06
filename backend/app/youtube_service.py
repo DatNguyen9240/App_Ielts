@@ -71,13 +71,30 @@ def get_youtube_video_info_and_captions(youtube_id_or_url: str) -> Dict[str, Any
             info_res["description"] = info.get("description") or ""
             info_res["thumbnail"] = info.get("thumbnail") or f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg"
 
-            # Tìm phụ đề tiếng Anh (auto-generated captions hoặc manual subtitles)
-            subs = info.get("automatic_captions", {}).get("en", []) or info.get("subtitles", {}).get("en", [])
+            # Tìm phụ đề tiếng Anh (hỗ trợ en, en-US, en-GB, en-orig, ...)
+            auto_caps = info.get("automatic_captions", {}) or {}
+            sub_caps = info.get("subtitles", {}) or {}
+            subs = []
+            for k in ["en", "en-US", "en-GB", "en-CA", "en-orig"]:
+                if k in auto_caps:
+                    subs = auto_caps[k]
+                    break
+                if k in sub_caps:
+                    subs = sub_caps[k]
+                    break
+
+            if not subs:
+                for lang_code, cap_list in {**auto_caps, **sub_caps}.items():
+                    if lang_code.lower().startswith("en"):
+                        subs = cap_list
+                        break
+
             json3_url = next((s["url"] for s in subs if s.get("ext") == "json3"), None)
+            vtt_url = next((s["url"] for s in subs if s.get("ext") == "vtt"), None) if not json3_url else None
 
             if json3_url:
                 req = urllib.request.Request(json3_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=8) as resp:
+                with urllib.request.urlopen(req, timeout=10) as resp:
                     caption_data = json.loads(resp.read().decode("utf-8"))
                     segments = []
                     seg_id = 1
@@ -89,7 +106,7 @@ def get_youtube_video_info_and_captions(youtube_id_or_url: str) -> Dict[str, Any
                         d_ms = ev.get("dDurationMs", 0) / 1000.0
                         t_end = t_start + d_ms
 
-                        if text and len(text) > 1:
+                        if text and len(text) > 1 and not text.startswith("["):
                             # Trích xuất các từ con trong câu (nếu có offset)
                             words_list = []
                             for s in segs:
@@ -115,6 +132,32 @@ def get_youtube_video_info_and_captions(youtube_id_or_url: str) -> Dict[str, Any
                             })
                             seg_id += 1
 
+                    info_res["segments"] = segments
+
+            elif vtt_url:
+                req = urllib.request.Request(vtt_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    vtt_text = resp.read().decode("utf-8")
+                    segments = []
+                    seg_id = 1
+                    # Parse basic VTT blocks
+                    blocks = re.split(r'\n\s*\n', vtt_text)
+                    for blk in blocks:
+                        m = re.search(r'(\d{2}:)?(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}:)?(\d{2}):(\d{2})\.(\d{3})', blk)
+                        if m:
+                            # Parse start and end times
+                            lines = [ln.strip() for ln in blk.strip().splitlines() if not re.match(r'^\d+$|-->|WEBVTT', ln)]
+                            clean_sentence = " ".join(lines).strip()
+                            clean_sentence = re.sub(r'<[^>]+>', '', clean_sentence)
+                            if clean_sentence and len(clean_sentence) > 1:
+                                segments.append({
+                                    "id": seg_id,
+                                    "text": clean_sentence,
+                                    "start_time": 0.0,
+                                    "end_time": 0.0,
+                                    "words": []
+                                })
+                                seg_id += 1
                     info_res["segments"] = segments
 
     except Exception as e:
@@ -211,3 +254,4 @@ def search_youtube_videos_online(query: str, max_results: int = 6) -> List[Dict[
     except Exception as e:
         logger.warning(f"Lỗi khi tìm kiếm video YouTube: {e}")
         return []
+

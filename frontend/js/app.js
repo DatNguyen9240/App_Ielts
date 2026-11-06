@@ -619,6 +619,9 @@ function showMyVideosTab() {
     renderTopicTabs();
 }
 
+// Bí danh để tương thích và an toàn tuyệt đối
+const selectMyVideosTab = showMyVideosTab;
+
 /**
  * Chuyển sang Tab Khám phá Video theo 1 trong 16 chủ đề IELTS
  */
@@ -811,7 +814,7 @@ async function triggerInstantImportOnlineVideo(video, topicTitle) {
         showToast(`🎉 Đã nạp thành công bài học "${newVid.title}"!`, "success", 4000);
         await loadVideos();
         switchTab("video");
-        selectMyVideosTab();
+        showMyVideosTab();
         selectVideo(newVid.id);
     } catch (err) {
         console.error("Lỗi nạp bài học online:", err);
@@ -2082,7 +2085,7 @@ function setupEventListeners() {
                 // Nạp lại danh sách video và tự động chọn video vừa nạp
                 await loadVideos();
                 switchTab("video");
-                selectMyVideosTab();
+                showMyVideosTab();
                 selectVideo(uploadedVideo.id);
             } catch (err) {
                 showToast("Lỗi khi nạp bài học online: " + err.message, "error", 5000);
@@ -2109,7 +2112,7 @@ function setupEventListeners() {
                 // Nạp lại danh sách video và tự động chọn video vừa tải về
                 await loadVideos();
                 switchTab("video");
-                selectMyVideosTab();
+                showMyVideosTab();
                 selectVideo(uploadedVideo.id);
             } catch (err) {
                 showToast("Lỗi khi xử lý video từ link: " + err.message, "error", 5000);
