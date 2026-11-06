@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .database import engine, Base, get_db
-from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos, description_service, youtube_service, topic_vocabularies
+from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos, description_service, youtube_service, topic_vocabularies, ai_vocab_service
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -86,15 +86,16 @@ def get_videos_for_topic(topic_id: int):
 
 
 @app.get("/api/topics/{topic_id}/vocabularies")
-def get_vocabularies_for_topic(topic_id: int):
+def get_vocabularies_for_topic(topic_id: int, db: Session = Depends(get_db)):
     """
     Lấy danh sách từ vựng chuẩn IELTS Speaking Band 7.5 - 9.0 theo chủ đề.
     Mỗi từ có phiên âm IPA, loại từ, nghĩa tiếng Việt, câu hỏi Speaking và câu ngữ cảnh thực tế.
+    Được lưu trữ bền vững trong Database và tự động nạp hoặc mở rộng bằng AI.
     """
     topic_item = next((t for t in topics.IELTS_TOPICS if t["id"] == topic_id), None)
     if not topic_item:
         raise HTTPException(status_code=404, detail="Không tìm thấy chủ đề này")
-    vocabs = topic_vocabularies.get_vocabularies_for_topic(topic_id)
+    vocabs = ai_vocab_service.get_or_seed_topic_vocabularies(db, topic_id)
     return {
         "topic_id": topic_id,
         "topic_title": topic_item["title"],
@@ -102,6 +103,79 @@ def get_vocabularies_for_topic(topic_id: int):
         "total": len(vocabs),
         "vocabularies": vocabs
     }
+
+
+@app.get("/api/ai/config")
+def get_ai_config():
+    """Kiểm tra trạng thái cấu hình Gemini API Key"""
+    key = ai_vocab_service.get_gemini_api_key()
+    masked = f"{key[:6]}...{key[-4:]}" if len(key) > 10 else ("***" if key else "")
+    return {
+        "has_key": bool(key),
+        "masked_key": masked
+    }
+
+
+@app.post("/api/ai/config")
+def set_ai_config(req: schemas.SetApiKeyRequest):
+    """Lưu cấu hình Gemini API Key"""
+    if not req.api_key or len(req.api_key.strip()) < 10:
+        raise HTTPException(status_code=400, detail="API Key không hợp lệ")
+    ok = ai_vocab_service.save_gemini_api_key(req.api_key)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Không thể lưu API Key vào hệ thống")
+    return {
+        "success": True,
+        "message": "Đã lưu Gemini API Key thành công!"
+    }
+
+
+@app.post("/api/topics/{topic_id}/generate-ai-vocab")
+def generate_topic_vocab_with_ai(
+    topic_id: int, 
+    req: Optional[schemas.GenerateAiVocabRequest] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Dùng Gemini AI sinh 8 từ vựng học thuật & collocations Band 8.0+ cho chủ đề.
+    Tự động tránh trùng lặp với các từ đã có trong chủ đề, lưu vào DB và trả về danh sách.
+    """
+    topic_item = next((t for t in topics.IELTS_TOPICS if t["id"] == topic_id), None)
+    if not topic_item:
+        raise HTTPException(status_code=404, detail="Không tìm thấy chủ đề này")
+
+    api_key = req.api_key if req and req.api_key else None
+
+    # Lấy danh sách các từ đã có để tránh trùng lặp
+    existing_records = db.query(models.TopicVocabulary).filter(models.TopicVocabulary.topic_id == topic_id).all()
+    existing_words = [r.word for r in existing_records]
+
+    try:
+        new_items = ai_vocab_service.generate_topic_vocabularies_with_ai(
+            topic_id=topic_id,
+            topic_title=topic_item["title"],
+            existing_words=existing_words,
+            api_key=api_key
+        )
+        # Lưu vào Database
+        saved_items = ai_vocab_service.add_ai_generated_vocabularies_to_db(db, topic_id, new_items)
+
+        # Lấy toàn bộ danh sách cập nhật mới nhất
+        all_vocabs = ai_vocab_service.get_or_seed_topic_vocabularies(db, topic_id)
+        return {
+            "success": True,
+            "topic_id": topic_id,
+            "topic_title": topic_item["title"],
+            "new_count": len(saved_items),
+            "total": len(all_vocabs),
+            "vocabularies": all_vocabs,
+            "message": f"AI đã sinh thành công {len(saved_items)} từ vựng mới chuẩn Band 8.0+!"
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Lỗi AI sinh từ vựng: {e}")
+        raise HTTPException(status_code=500, detail=f"Lỗi AI sinh từ vựng: {str(e)}")
 
 
 @app.get("/api/topics/vocabularies/search")

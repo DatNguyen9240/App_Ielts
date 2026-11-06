@@ -109,6 +109,13 @@ class TopicVocabSaveRequest(BaseModel):
     context_sentence: str
     topic_id: Optional[int] = None
 
+class SetApiKeyRequest(BaseModel):
+    api_key: str
+
+class GenerateAiVocabRequest(BaseModel):
+    topic_id: int
+    api_key: Optional[str] = None
+
 # === FLASHCARD SCHEMAS ===
 class FlashcardCreate(BaseModel):
     word: str

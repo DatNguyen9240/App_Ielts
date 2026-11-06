@@ -72,3 +72,21 @@ class Flashcard(Base):
 
     video = relationship("Video", back_populates="flashcards")
 
+
+class TopicVocabulary(Base):
+    """Bảng lưu trữ từ vựng chuẩn & từ vựng AI sinh theo 16 chủ đề IELTS"""
+    __tablename__ = "topic_vocabularies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    topic_id = Column(Integer, index=True, nullable=False)
+    word = Column(String(150), index=True, nullable=False)
+    phonetic = Column(String(100), nullable=True)
+    part_of_speech = Column(String(50), nullable=True)
+    meaning = Column(Text, nullable=False)
+    context_sentence = Column(Text, nullable=False)
+    speaking_question = Column(Text, nullable=True)
+    collocations_json = Column(Text, nullable=True)  # Chuỗi JSON danh sách collocations
+    source = Column(String(50), default="curated")   # "curated" hoặc "ai"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+

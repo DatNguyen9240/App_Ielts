@@ -62,7 +62,17 @@ const DOM = {
     topicVocabFilterInput: document.getElementById("topicVocabFilterInput"),
     topicVocabCountBadge: document.getElementById("topicVocabCountBadge"),
     saveAllTopicVocabBtn: document.getElementById("saveAllTopicVocabBtn"),
+    generateAiVocabBtn: document.getElementById("generateAiVocabBtn"),
+    openAiKeySettingsBtn: document.getElementById("openAiKeySettingsBtn"),
     topicVocabCardsGrid: document.getElementById("topicVocabCardsGrid"),
+
+    // Gemini AI Key Modal
+    geminiKeyModal: document.getElementById("geminiKeyModal"),
+    closeGeminiKeyModalBtn: document.getElementById("closeGeminiKeyModalBtn"),
+    cancelGeminiKeyBtn: document.getElementById("cancelGeminiKeyBtn"),
+    saveGeminiKeyBtn: document.getElementById("saveGeminiKeyBtn"),
+    geminiApiKeyInput: document.getElementById("geminiApiKeyInput"),
+    geminiKeyStatusText: document.getElementById("geminiKeyStatusText"),
 
     // Topic Tabs & Selects
     topicTabsContainer: document.getElementById("topicTabsContainer"),
@@ -553,6 +563,37 @@ const API = {
             body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error("Không thể lưu từ vựng vào Flashcard");
+        return await res.json();
+    },
+
+    async getAiConfig() {
+        const res = await fetch(`${API_BASE_URL}/api/ai/config`);
+        if (!res.ok) throw new Error("Không thể kiểm tra cấu hình AI");
+        return await res.json();
+    },
+
+    async setAiConfig(apiKey) {
+        const res = await fetch(`${API_BASE_URL}/api/ai/config`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ api_key: apiKey })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || "Không thể lưu API Key");
+        }
+        return await res.json();
+    },
+
+    async generateAiTopicVocab(topicId) {
+        const res = await fetch(`${API_BASE_URL}/api/topics/${topicId}/generate-ai-vocab`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || "Không thể sinh từ vựng bằng AI");
+        }
         return await res.json();
     },
 
@@ -1194,6 +1235,103 @@ async function saveAllVisibleTopicVocabs() {
     });
 
     showToast(`Đã lưu thành công ${savedCount} từ vựng kèm ngữ cảnh vào Flashcard!`, "success", 4000);
+}
+
+/**
+ * Mở modal cấu hình Gemini API Key
+ */
+async function openGeminiKeyModal() {
+    if (!DOM.geminiKeyModal) return;
+    DOM.geminiKeyModal.classList.remove("hidden");
+    if (DOM.geminiKeyStatusText) DOM.geminiKeyStatusText.innerText = "Đang kiểm tra key...";
+    try {
+        const cfg = await API.getAiConfig();
+        if (cfg.has_key) {
+            if (DOM.geminiKeyStatusText) {
+                DOM.geminiKeyStatusText.innerHTML = `<span class="text-emerald-600 font-bold"><i class="fa-solid fa-check-circle mr-1"></i>Đã cấu hình (${cfg.masked_key})</span>`;
+            }
+        } else {
+            if (DOM.geminiKeyStatusText) {
+                DOM.geminiKeyStatusText.innerHTML = `<span class="text-amber-600 font-bold"><i class="fa-solid fa-circle-exclamation mr-1"></i>Chưa lưu API Key</span>`;
+            }
+        }
+    } catch (e) {
+        if (DOM.geminiKeyStatusText) DOM.geminiKeyStatusText.innerText = "Không thể kiểm tra trạng thái";
+    }
+}
+
+/**
+ * Đóng modal cấu hình Gemini API Key
+ */
+function closeGeminiKeyModal() {
+    if (DOM.geminiKeyModal) DOM.geminiKeyModal.classList.add("hidden");
+}
+
+/**
+ * Lưu Gemini API Key từ modal
+ */
+async function saveGeminiApiKeyFromModal() {
+    const key = (DOM.geminiApiKeyInput?.value || "").trim();
+    if (!key || key.length < 10) {
+        showToast("Vui lòng nhập API Key hợp lệ (bắt đầu bằng AIza...)", "warning");
+        return;
+    }
+
+    try {
+        await API.setAiConfig(key);
+        showToast("Đã lưu Google Gemini API Key thành công!", "success", 3000);
+        closeGeminiKeyModal();
+        if (DOM.geminiApiKeyInput) DOM.geminiApiKeyInput.value = "";
+    } catch (err) {
+        showToast("Lỗi khi lưu API Key: " + err.message, "error");
+    }
+}
+
+/**
+ * Kích hoạt AI tạo thêm từ vựng mới chuẩn Band 8.0+
+ */
+async function triggerGenerateAiVocab() {
+    if (!state.activeTab || typeof state.activeTab !== "object") {
+        showToast("Vui lòng chọn một chủ đề IELTS", "info");
+        return;
+    }
+
+    // Kiểm tra xem đã có key chưa
+    try {
+        const cfg = await API.getAiConfig();
+        if (!cfg.has_key) {
+            showToast("Vui lòng nhập Gemini API Key miễn phí để AI sinh từ vựng", "warning", 4000);
+            openGeminiKeyModal();
+            return;
+        }
+    } catch (e) {}
+
+    // Bật trạng thái loading trên nút
+    const origBtnHtml = DOM.generateAiVocabBtn ? DOM.generateAiVocabBtn.innerHTML : "";
+    if (DOM.generateAiVocabBtn) {
+        DOM.generateAiVocabBtn.disabled = true;
+        DOM.generateAiVocabBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-amber-300"></i><span>AI đang suy nghĩ...</span>`;
+    }
+
+    showToast(`AI đang phân tích chủ đề "${state.activeTab.short_title}" và tạo 8 từ vựng Band 8.0+...`, "info", 4500);
+
+    try {
+        const res = await API.generateAiTopicVocab(state.activeTab.id);
+        state.currentTopicVocabs = res.vocabularies || [];
+        renderTopicVocabCards(state.currentTopicVocabs);
+        showToast(res.message || "Đã tạo thành công 8 từ vựng mới bằng AI!", "success", 4000);
+    } catch (err) {
+        console.error("Lỗi AI sinh từ vựng:", err);
+        showToast("Lỗi AI sinh từ vựng: " + err.message, "error", 5000);
+        if (err.message && err.message.toLowerCase().includes("key")) {
+            openGeminiKeyModal();
+        }
+    } finally {
+        if (DOM.generateAiVocabBtn) {
+            DOM.generateAiVocabBtn.disabled = false;
+            DOM.generateAiVocabBtn.innerHTML = origBtnHtml;
+        }
+    }
 }
 
 /**
@@ -2540,6 +2678,26 @@ function setupEventListeners() {
     if (DOM.saveAllTopicVocabBtn) {
         DOM.saveAllTopicVocabBtn.addEventListener("click", saveAllVisibleTopicVocabs);
     }
+    if (DOM.generateAiVocabBtn) {
+        DOM.generateAiVocabBtn.addEventListener("click", triggerGenerateAiVocab);
+    }
+    if (DOM.openAiKeySettingsBtn) {
+        DOM.openAiKeySettingsBtn.addEventListener("click", openGeminiKeyModal);
+    }
+    if (DOM.closeGeminiKeyModalBtn) {
+        DOM.closeGeminiKeyModalBtn.addEventListener("click", closeGeminiKeyModal);
+    }
+    if (DOM.cancelGeminiKeyBtn) {
+        DOM.cancelGeminiKeyBtn.addEventListener("click", closeGeminiKeyModal);
+    }
+    if (DOM.saveGeminiKeyBtn) {
+        DOM.saveGeminiKeyBtn.addEventListener("click", saveGeminiApiKeyFromModal);
+    }
+    if (DOM.geminiKeyModal) {
+        DOM.geminiKeyModal.addEventListener("click", (e) => {
+            if (e.target === DOM.geminiKeyModal) closeGeminiKeyModal();
+        });
+    }
     if (DOM.watchModalImportBtn) {
         DOM.watchModalImportBtn.addEventListener("click", () => {
             if (state.watchingVideo && state.activeTab) {
@@ -2725,6 +2883,7 @@ function setupEventListeners() {
             closeModal(DOM.uploadModal);
             closeModal(DOM.flashcardModal);
             if (DOM.topicVocabModal) DOM.topicVocabModal.classList.add("hidden");
+            closeGeminiKeyModal();
             DOM.replayVideo.pause();
             closeModal(DOM.videoReplayModal);
         }
