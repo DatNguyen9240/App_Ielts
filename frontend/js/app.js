@@ -1296,7 +1296,7 @@ function closeGeminiKeyModal() {
 async function saveGeminiApiKeyFromModal() {
     const key = (DOM.geminiApiKeyInput?.value || "").trim();
     if (!key || key.length < 10) {
-        showToast("Vui lòng nhập API Key hợp lệ (bắt đầu bằng AIza...)", "warning");
+        showToast("Vui lòng nhập API Key hợp lệ từ Google AI Studio", "warning");
         return;
     }
 

@@ -122,7 +122,22 @@ def call_gemini_api(prompt: str, api_key: str) -> List[Dict[str, Any]]:
             else:
                 err_detail = resp.text
                 logger.warning(f"Gemini model {model_name} trả về lỗi HTTP {resp.status_code}: {err_detail[:200]}")
-                last_error = f"HTTP {resp.status_code}: {err_detail[:150]}"
+                try:
+                    err_json = resp.json().get("error", {})
+                    msg = err_json.get("message", "")
+                    if "free tier is not available" in msg.lower() or "billing" in msg.lower():
+                        raise RuntimeError(
+                            "API Key này thuộc Google Cloud Project chưa bật Free Tier (HTTP 403). "
+                            "Khắc phục 100% miễn phí: Vào aistudio.google.com/apikey bằng Gmail cá nhân, "
+                            "bấm 'Create API key' và chọn 'Create API key in new project' để tạo key Free!"
+                        )
+                    last_error = f"HTTP {resp.status_code}: {msg}" if msg else f"HTTP {resp.status_code}"
+                except RuntimeError:
+                    raise
+                except Exception:
+                    last_error = f"HTTP {resp.status_code}: {err_detail[:120]}"
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.warning(f"Lỗi kết nối Gemini model {model_name}: {e}")
             last_error = str(e)

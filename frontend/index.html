@@ -896,9 +896,14 @@
             </div>
 
             <div class="space-y-3">
-                <div class="bg-purple-50 p-3 rounded-xl border border-purple-100 text-xs text-purple-900 leading-relaxed">
-                    <p class="font-bold flex items-center"><i class="fa-solid fa-lightbulb text-amber-500 mr-1.5"></i>Hoàn toàn miễn phí:</p>
-                    <p class="mt-1">Google cung cấp Gemini 1.5/2.0 Flash miễn phí. Bạn có thể lấy API Key trong 30 giây tại <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-indigo-600 underline font-bold">aistudio.google.com</a>.</p>
+                <div class="bg-purple-50 p-3.5 rounded-xl border border-purple-100 text-xs text-purple-900 leading-relaxed space-y-1.5">
+                    <p class="font-bold flex items-center text-purple-950"><i class="fa-solid fa-lightbulb text-amber-500 mr-1.5"></i>Cách lấy API Key Miễn Phí 100% (Không cần thẻ):</p>
+                    <ol class="list-decimal list-inside space-y-1 text-slate-700">
+                        <li>Truy cập <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-indigo-600 underline font-bold">aistudio.google.com/app/apikey</a> (đăng nhập bằng Gmail cá nhân).</li>
+                        <li>Bấm nút <span class="font-semibold text-purple-700">"Create API key"</span>.</li>
+                        <li><strong class="text-rose-600">Lưu ý quan trọng:</strong> Chọn <span class="font-bold text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">"Create API key in new project"</span> (Tạo trong dự án mới) để nhận Free Tier miễn phí vĩnh viễn.</li>
+                        <li>Sao chép key và dán vào ô bên dưới.</li>
+                    </ol>
                 </div>
 
                 <div class="space-y-1.5">
@@ -906,7 +911,7 @@
                     <input 
                         type="password" 
                         id="geminiApiKeyInput" 
-                        placeholder="Dán AIzaSy... tại đây" 
+                        placeholder="Dán API Key (AQ... hoặc AIzaSy...) tại đây" 
                         class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono"
                     >
                     <div id="geminiKeyStatusText" class="text-[11px] text-slate-500 flex items-center justify-between">
