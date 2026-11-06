@@ -35,3 +35,11 @@ desktop.ini
 *.tmp
 scratch/
 
+# Secrets, API Keys & Local Configurations
+.env
+.env.*
+*.env
+backend/ai_config.json
+ai_config.json
+
+
