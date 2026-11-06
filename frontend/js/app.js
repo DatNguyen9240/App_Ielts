@@ -25,7 +25,8 @@ const state = {
         hasMore: true,
         isLoading: false,
         seenIds: new Set()
-    }
+    },
+    currentTopicVocabs: []
 };
 
 // ==================== DOM ELEMENTS ====================
@@ -48,9 +49,20 @@ const DOM = {
     loadMoreTopicVideosBtn: document.getElementById("loadMoreTopicVideosBtn"),
     infiniteScrollEnd: document.getElementById("infiniteScrollEnd"),
     refreshTopicVideosBtn: document.getElementById("refreshTopicVideosBtn"),
+    openTopicVocabModalBtn: document.getElementById("openTopicVocabModalBtn"),
     backToMyVideosBtn: document.getElementById("backToMyVideosBtn"),
     youtubeSearchKeywordInput: document.getElementById("youtubeSearchKeywordInput"),
     youtubeSearchSubmitBtn: document.getElementById("youtubeSearchSubmitBtn"),
+
+    // Topic Vocab Modal
+    topicVocabModal: document.getElementById("topicVocabModal"),
+    closeTopicVocabModalBtn: document.getElementById("closeTopicVocabModalBtn"),
+    topicVocabModalTitle: document.getElementById("topicVocabModalTitle"),
+    topicVocabModalSubtitle: document.getElementById("topicVocabModalSubtitle"),
+    topicVocabFilterInput: document.getElementById("topicVocabFilterInput"),
+    topicVocabCountBadge: document.getElementById("topicVocabCountBadge"),
+    saveAllTopicVocabBtn: document.getElementById("saveAllTopicVocabBtn"),
+    topicVocabCardsGrid: document.getElementById("topicVocabCardsGrid"),
 
     // Topic Tabs & Selects
     topicTabsContainer: document.getElementById("topicTabsContainer"),
@@ -528,6 +540,22 @@ const API = {
         return await res.json();
     },
 
+    async fetchTopicVocabularies(topicId) {
+        const res = await fetch(`${API_BASE_URL}/api/topics/${topicId}/vocabularies`);
+        if (!res.ok) throw new Error("Không thể tải danh sách từ vựng chủ đề");
+        return await res.json();
+    },
+
+    async saveTopicVocabToFlashcard(data) {
+        const res = await fetch(`${API_BASE_URL}/api/topics/vocabularies/save-flashcard`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error("Không thể lưu từ vựng vào Flashcard");
+        return await res.json();
+    },
+
     async searchWordsInYoutube(youtubeId, query) {
         const res = await fetch(`${API_BASE_URL}/api/youtube/search-words`, {
             method: "POST",
@@ -854,6 +882,318 @@ function renderVideoCards(videos, topicTitle, append = false) {
 
         DOM.topicVideosGrid.appendChild(card);
     });
+}
+
+// ==================== BỘ TỪ VỰNG CHỦ ĐỀ CHUẨN NGỮ CẢNH (BAND 7.5 - 9.0) ====================
+
+/**
+ * Phát âm thanh bằng Web Speech API (chuẩn giọng bản ngữ Anh/Mỹ)
+ */
+function speakText(text, lang = "en-US") {
+    if (!("speechSynthesis" in window)) {
+        showToast("Trình duyệt không hỗ trợ phát âm tự động", "warning");
+        return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+    utterance.rate = 0.88; // Tốc độ tự nhiên, rõ ràng cho người học
+    window.speechSynthesis.speak(utterance);
+}
+
+/**
+ * Tô sáng từ vựng mục tiêu trong câu ngữ cảnh
+ */
+function highlightWordInSentence(sentence, targetWord) {
+    if (!sentence || !targetWord) return sentence || "";
+    const cleanWord = targetWord.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(\\b${cleanWord}\\w*\\b)`, 'gi');
+    return sentence.replace(regex, '<mark class="bg-amber-200 text-amber-950 font-bold px-1.5 py-0.5 rounded shadow-sm">$1</mark>');
+}
+
+/**
+ * Mở Modal danh sách từ vựng & câu ngữ cảnh Band 7.5 - 9.0 cho chủ đề
+ */
+async function openTopicVocabModal(topic) {
+    if (!topic || typeof topic !== "object") {
+        showToast("Vui lòng chọn một chủ đề IELTS để xem từ vựng", "info");
+        return;
+    }
+
+    if (!DOM.topicVocabModal) return;
+
+    if (DOM.topicVocabModalTitle) {
+        DOM.topicVocabModalTitle.innerText = `Bộ từ vựng: ${topic.title}`;
+    }
+    if (DOM.topicVocabModalSubtitle) {
+        DOM.topicVocabModalSubtitle.innerText = `Các từ vựng học thuật, idioms & collocations đắt giá kèm câu ngữ cảnh thực tế cho chủ đề "${topic.short_title}"`;
+    }
+    if (DOM.topicVocabFilterInput) {
+        DOM.topicVocabFilterInput.value = "";
+    }
+
+    DOM.topicVocabModal.classList.remove("hidden");
+    if (DOM.topicVocabCardsGrid) {
+        DOM.topicVocabCardsGrid.innerHTML = `
+            <div class="col-span-full py-16 text-center text-slate-500 space-y-3">
+                <i class="fa-solid fa-spinner fa-spin text-3xl text-indigo-600"></i>
+                <p class="text-sm font-semibold">Đang tải danh sách từ vựng chuẩn ngữ cảnh...</p>
+            </div>
+        `;
+    }
+
+    try {
+        const data = await API.fetchTopicVocabularies(topic.id);
+        state.currentTopicVocabs = data.vocabularies || [];
+        renderTopicVocabCards(state.currentTopicVocabs);
+    } catch (err) {
+        console.error("Lỗi tải từ vựng chủ đề:", err);
+        if (DOM.topicVocabCardsGrid) {
+            DOM.topicVocabCardsGrid.innerHTML = `
+                <div class="col-span-full py-12 text-center text-rose-500 bg-rose-50 rounded-2xl border border-rose-200 p-6 space-y-2">
+                    <i class="fa-solid fa-circle-exclamation text-3xl"></i>
+                    <p class="text-sm font-bold">Không thể tải từ vựng: ${err.message}</p>
+                </div>
+            `;
+        }
+    }
+}
+
+/**
+ * Hiển thị lưới thẻ từ vựng chủ đề kèm câu ngữ cảnh
+ */
+function renderTopicVocabCards(vocabs) {
+    if (!DOM.topicVocabCardsGrid) return;
+    DOM.topicVocabCardsGrid.innerHTML = "";
+
+    if (DOM.topicVocabCountBadge) {
+        DOM.topicVocabCountBadge.innerText = `${vocabs.length} từ vựng Band 8.0+`;
+    }
+
+    if (!vocabs || vocabs.length === 0) {
+        DOM.topicVocabCardsGrid.innerHTML = `
+            <div class="col-span-full py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 p-8 space-y-2">
+                <i class="fa-solid fa-book-open text-3xl text-slate-300"></i>
+                <p class="text-sm font-bold text-slate-600">Không tìm thấy từ vựng phù hợp</p>
+                <p class="text-xs text-slate-400">Hãy thử xóa bộ lọc tìm kiếm để xem lại toàn bộ từ vựng.</p>
+            </div>
+        `;
+        return;
+    }
+
+    vocabs.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between space-y-3.5 group";
+
+        // Màu badge cho loại từ
+        let badgeColor = "bg-indigo-50 text-indigo-700 border-indigo-200";
+        const pos = (item.part_of_speech || "").toLowerCase();
+        if (pos.includes("idiom")) {
+            badgeColor = "bg-amber-50 text-amber-800 border-amber-200";
+        } else if (pos.includes("collocation")) {
+            badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
+        } else if (pos.includes("adj")) {
+            badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
+        }
+
+        const highlightedSentence = highlightWordInSentence(item.context_sentence, item.word);
+
+        const collocationsHtml = (item.collocations || []).map(c => `
+            <span class="inline-block bg-slate-100 text-slate-600 text-[10px] font-medium px-2 py-0.5 rounded-md mr-1 mt-1">
+                ${c}
+            </span>
+        `).join("");
+
+        card.innerHTML = `
+            <div class="space-y-2.5">
+                <!-- Header Word & Phonetics -->
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h4 class="text-base font-extrabold text-slate-900 group-hover:text-indigo-600 transition tracking-tight">
+                                ${item.word}
+                            </h4>
+                            <button type="button" class="speak-word-btn w-6 h-6 rounded-full bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 flex items-center justify-center transition text-[11px]" title="Nghe phát âm từ này">
+                                <i class="fa-solid fa-volume-high"></i>
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-2 mt-0.5 text-xs text-slate-500">
+                            <span class="font-mono text-slate-400">${item.phonetic || ""}</span>
+                            <span class="border px-1.5 py-0.2 rounded text-[10px] font-bold uppercase ${badgeColor}">
+                                ${item.part_of_speech || "Word"}
+                            </span>
+                        </div>
+                    </div>
+                    <button type="button" class="save-fc-btn px-2.5 py-1 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 rounded-xl text-[11px] font-bold transition flex items-center space-x-1 border border-indigo-200 shadow-sm" title="Lưu từ này vào bộ thẻ Flashcard">
+                        <i class="fa-regular fa-star text-xs"></i>
+                        <span>Lưu thẻ</span>
+                    </button>
+                </div>
+
+                <!-- Meaning -->
+                <div class="text-xs font-semibold text-slate-800 leading-snug">
+                    <span class="text-indigo-600 font-bold mr-1">✦</span> ${item.meaning}
+                </div>
+
+                <!-- Context Sentence Box -->
+                <div class="bg-amber-50/60 rounded-xl p-3 border border-amber-200/70 space-y-1.5">
+                    <div class="flex items-center justify-between text-[11px] font-bold text-amber-900">
+                        <span class="flex items-center space-x-1">
+                            <i class="fa-solid fa-quote-left text-amber-500 text-[10px]"></i>
+                            <span>Ngữ cảnh IELTS Speaking thực tế:</span>
+                        </span>
+                        <button type="button" class="speak-sentence-btn text-amber-700 hover:text-amber-900 p-0.5 rounded transition" title="Nghe đọc toàn bộ câu ngữ cảnh">
+                            <i class="fa-solid fa-volume-high text-xs"></i>
+                        </button>
+                    </div>
+                    <p class="text-xs text-slate-800 leading-relaxed italic">
+                        "${highlightedSentence}"
+                    </p>
+                    ${item.speaking_question ? `
+                        <div class="text-[10px] text-amber-800/80 font-medium pt-1 border-t border-amber-200/60 flex items-center space-x-1">
+                            <i class="fa-regular fa-lightbulb text-amber-600"></i>
+                            <span><b>Gợi ý câu hỏi:</b> "${item.speaking_question}"</span>
+                        </div>
+                    ` : ""}
+                </div>
+
+                <!-- Collocations -->
+                ${collocationsHtml ? `
+                    <div class="pt-0.5">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cụm từ hay gặp:</span>
+                        <div class="flex flex-wrap">${collocationsHtml}</div>
+                    </div>
+                ` : ""}
+            </div>
+
+            <!-- Card Bottom Actions -->
+            <div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                <button type="button" class="find-in-video-btn text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center space-x-1" title="Dò từ này trong bài nói của các video chủ đề">
+                    <i class="fa-solid fa-magnifying-glass text-[11px]"></i>
+                    <span>Dò trong video bài mẫu</span>
+                </button>
+                <button type="button" class="copy-sentence-btn text-xs text-slate-400 hover:text-slate-700 flex items-center space-x-1 transition" title="Sao chép câu ngữ cảnh">
+                    <i class="fa-regular fa-copy text-xs"></i>
+                    <span>Copy câu</span>
+                </button>
+            </div>
+        `;
+
+        // Sự kiện phát âm từ
+        card.querySelector(".speak-word-btn").onclick = () => speakText(item.word);
+
+        // Sự kiện phát âm toàn bộ câu ngữ cảnh
+        card.querySelector(".speak-sentence-btn").onclick = () => speakText(item.context_sentence);
+
+        // Sự kiện lưu vào Flashcard
+        const saveBtn = card.querySelector(".save-fc-btn");
+        saveBtn.onclick = () => saveTopicVocabItem(item, saveBtn);
+
+        // Sự kiện copy câu ngữ cảnh
+        card.querySelector(".copy-sentence-btn").onclick = async () => {
+            try {
+                await navigator.clipboard.writeText(item.context_sentence);
+                showToast(`Đã sao chép câu ngữ cảnh của "${item.word}"!`, "success", 2000);
+            } catch (e) {
+                showToast("Không thể sao chép văn bản", "warning");
+            }
+        };
+
+        // Sự kiện dò từ vựng trong video
+        card.querySelector(".find-in-video-btn").onclick = () => {
+            if (DOM.topicVocabModal) DOM.topicVocabModal.classList.add("hidden");
+            showToast(`Đang tìm bài nói có chứa "${item.word}"...`, "info", 2500);
+            const firstCardTrigger = document.querySelector(".watch-now-trigger");
+            if (firstCardTrigger) {
+                firstCardTrigger.click();
+                setTimeout(() => {
+                    if (DOM.watchModalSearchInput) {
+                        DOM.watchModalSearchInput.value = item.word;
+                        if (DOM.watchModalSearchBtn) DOM.watchModalSearchBtn.click();
+                    }
+                }, 400);
+            } else {
+                searchYoutubeVideosOnline(item.word);
+            }
+        };
+
+        DOM.topicVocabCardsGrid.appendChild(card);
+    });
+}
+
+/**
+ * Lưu một từ vựng chủ đề vào bộ Flashcard
+ */
+async function saveTopicVocabItem(item, buttonEl) {
+    try {
+        const payload = {
+            word: item.word,
+            meaning: item.meaning,
+            context_sentence: item.context_sentence,
+            topic_id: state.activeTab && typeof state.activeTab === "object" ? state.activeTab.id : 1
+        };
+
+        const res = await API.saveTopicVocabToFlashcard(payload);
+
+        if (buttonEl) {
+            buttonEl.className = "px-2.5 py-1 bg-emerald-500 text-white rounded-xl text-[11px] font-bold transition flex items-center space-x-1 shadow-sm";
+            buttonEl.innerHTML = `<i class="fa-solid fa-check text-xs"></i><span>Đã lưu</span>`;
+        }
+
+        // Cập nhật lại danh sách Flashcard ngầm
+        try {
+            state.flashcards = await API.fetchFlashcards();
+            updateFlashcardBadgeCount();
+        } catch (eFc) {
+            console.warn("Lỗi tải lại flashcard:", eFc);
+        }
+
+        showToast(res.message || `Đã lưu từ "${item.word}" vào Flashcard!`, "success", 3000);
+    } catch (err) {
+        console.error("Lỗi lưu Flashcard từ vựng chủ đề:", err);
+        showToast("Lỗi khi lưu Flashcard: " + err.message, "error");
+    }
+}
+
+/**
+ * Lưu toàn bộ từ vựng đang hiển thị vào Flashcard một chạm
+ */
+async function saveAllVisibleTopicVocabs() {
+    if (!state.currentTopicVocabs || state.currentTopicVocabs.length === 0) {
+        showToast("Không có từ vựng nào để lưu", "info");
+        return;
+    }
+
+    let savedCount = 0;
+    showToast(`Đang lưu ${state.currentTopicVocabs.length} từ vựng vào Flashcard...`, "info", 2000);
+
+    for (const item of state.currentTopicVocabs) {
+        try {
+            const payload = {
+                word: item.word,
+                meaning: item.meaning,
+                context_sentence: item.context_sentence,
+                topic_id: state.activeTab && typeof state.activeTab === "object" ? state.activeTab.id : 1
+            };
+            await API.saveTopicVocabToFlashcard(payload);
+            savedCount++;
+        } catch (e) {
+            console.warn("Lỗi lưu từ:", item.word, e);
+        }
+    }
+
+    try {
+        state.flashcards = await API.fetchFlashcards();
+        updateFlashcardBadgeCount();
+    } catch (eFc) {}
+
+    // Đổi toàn bộ nút sang trạng thái Đã lưu
+    document.querySelectorAll(".save-fc-btn").forEach(btn => {
+        btn.className = "px-2.5 py-1 bg-emerald-500 text-white rounded-xl text-[11px] font-bold transition flex items-center space-x-1 shadow-sm";
+        btn.innerHTML = `<i class="fa-solid fa-check text-xs"></i><span>Đã lưu</span>`;
+    });
+
+    showToast(`Đã lưu thành công ${savedCount} từ vựng kèm ngữ cảnh vào Flashcard!`, "success", 4000);
 }
 
 /**
@@ -2158,6 +2498,48 @@ function setupEventListeners() {
             }
         });
     }
+    if (DOM.openTopicVocabModalBtn) {
+        DOM.openTopicVocabModalBtn.addEventListener("click", () => {
+            if (state.activeTab && typeof state.activeTab === "object") {
+                openTopicVocabModal(state.activeTab);
+            } else if (state.topics && state.topics.length > 0) {
+                openTopicVocabModal(state.topics[0]);
+            } else {
+                showToast("Vui lòng chọn một chủ đề IELTS", "info");
+            }
+        });
+    }
+    if (DOM.closeTopicVocabModalBtn) {
+        DOM.closeTopicVocabModalBtn.addEventListener("click", () => {
+            if (DOM.topicVocabModal) DOM.topicVocabModal.classList.add("hidden");
+        });
+    }
+    if (DOM.topicVocabModal) {
+        DOM.topicVocabModal.addEventListener("click", (e) => {
+            if (e.target === DOM.topicVocabModal) {
+                DOM.topicVocabModal.classList.add("hidden");
+            }
+        });
+    }
+    if (DOM.topicVocabFilterInput) {
+        DOM.topicVocabFilterInput.addEventListener("input", (e) => {
+            const q = (e.target.value || "").trim().toLowerCase();
+            if (!state.currentTopicVocabs) return;
+            if (!q) {
+                renderTopicVocabCards(state.currentTopicVocabs);
+            } else {
+                const filtered = state.currentTopicVocabs.filter(item => 
+                    (item.word && item.word.toLowerCase().includes(q)) ||
+                    (item.meaning && item.meaning.toLowerCase().includes(q)) ||
+                    (item.context_sentence && item.context_sentence.toLowerCase().includes(q))
+                );
+                renderTopicVocabCards(filtered);
+            }
+        });
+    }
+    if (DOM.saveAllTopicVocabBtn) {
+        DOM.saveAllTopicVocabBtn.addEventListener("click", saveAllVisibleTopicVocabs);
+    }
     if (DOM.watchModalImportBtn) {
         DOM.watchModalImportBtn.addEventListener("click", () => {
             if (state.watchingVideo && state.activeTab) {
@@ -2342,6 +2724,7 @@ function setupEventListeners() {
             closeDescriptionVocabModal();
             closeModal(DOM.uploadModal);
             closeModal(DOM.flashcardModal);
+            if (DOM.topicVocabModal) DOM.topicVocabModal.classList.add("hidden");
             DOM.replayVideo.pause();
             closeModal(DOM.videoReplayModal);
         }

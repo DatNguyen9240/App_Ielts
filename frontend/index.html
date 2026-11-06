@@ -186,7 +186,11 @@
                             Xem các video bài thi thực tế Band 8.0 - 9.0 để luyện nghe phát âm và phản xạ. Bạn có thể <b>xem video trực tiếp</b> hoặc bấm <b>"Học từ vựng"</b> để Whisper phân tích mốc thời gian từng từ.
                         </p>
                     </div>
-                    <div class="flex items-center space-x-2 whitespace-nowrap">
+                    <div class="flex items-center space-x-2 whitespace-nowrap flex-wrap gap-y-2">
+                        <button id="openTopicVocabModalBtn" class="px-3.5 py-2 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1.5 shadow-md shadow-amber-500/25">
+                            <i class="fa-solid fa-book-bookmark text-amber-100"></i>
+                            <span>Từ vựng & Ngữ cảnh (Band 8.0+)</span>
+                        </button>
                         <button id="refreshTopicVideosBtn" class="px-3.5 py-2 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-xl text-xs font-semibold border border-indigo-400/30 transition flex items-center space-x-1.5 shadow-sm">
                             <i class="fa-solid fa-magnifying-glass text-xs"></i>
                             <span>Tìm thêm video YouTube</span>
@@ -808,6 +812,59 @@
                             <p class="text-[11px] text-slate-400 max-w-md mx-auto">Hệ thống sẽ bóc tách các từ vựng trong mô tả bên trên, sau đó tìm đúng các đoạn video đang phát âm từ đó để bạn học tập.</p>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 8. Topic Core Vocabulary & Context Modal (Band 7.5 - 9.0) -->
+    <div id="topicVocabModal" class="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+            <!-- Modal Header -->
+            <div class="p-4 px-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center shadow-md font-extrabold text-lg">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h3 id="topicVocabModalTitle" class="text-base font-bold text-white leading-snug">Bộ từ vựng IELTS Speaking theo chủ đề</h3>
+                            <span class="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">Band 7.5 - 9.0</span>
+                        </div>
+                        <p id="topicVocabModalSubtitle" class="text-xs text-slate-300 mt-0.5">Tuyển chọn các từ vựng học thuật, idioms & collocations đắt giá kèm câu ngữ cảnh thực tế</p>
+                    </div>
+                </div>
+                <button id="closeTopicVocabModalBtn" class="text-slate-400 hover:text-white p-2 rounded-xl transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Search / Filter Inside Modal -->
+            <div class="p-4 px-6 border-b border-slate-100 bg-slate-50/80 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div class="relative w-full sm:w-80">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <input 
+                        type="text" 
+                        id="topicVocabFilterInput" 
+                        placeholder="Lọc nhanh từ vựng trong chủ đề này..." 
+                        class="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                    >
+                </div>
+                <div class="flex items-center space-x-2 text-xs text-slate-500">
+                    <span id="topicVocabCountBadge" class="bg-indigo-50 text-indigo-700 font-bold px-2.5 py-1 rounded-lg border border-indigo-200">
+                        8 từ vựng Band 8.0+
+                    </span>
+                    <button id="saveAllTopicVocabBtn" type="button" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 rounded-xl font-bold transition flex items-center space-x-1.5 border border-emerald-200">
+                        <i class="fa-solid fa-layer-group text-xs"></i>
+                        <span>Lưu tất cả vào Flashcard</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Modal Body (Cards List) -->
+            <div class="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/40">
+                <div id="topicVocabCardsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Rendered dynamically via JS -->
                 </div>
             </div>
         </div>

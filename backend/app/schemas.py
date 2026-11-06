@@ -102,6 +102,13 @@ class YoutubeOnlineImportRequest(BaseModel):
     title: Optional[str] = None
     topic: Optional[str] = None
 
+# === TOPIC VOCABULARY SCHEMAS ===
+class TopicVocabSaveRequest(BaseModel):
+    word: str
+    meaning: str
+    context_sentence: str
+    topic_id: Optional[int] = None
+
 # === FLASHCARD SCHEMAS ===
 class FlashcardCreate(BaseModel):
     word: str

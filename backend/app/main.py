@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .database import engine, Base, get_db
-from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos, description_service, youtube_service
+from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos, description_service, youtube_service, topic_vocabularies
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -82,6 +82,90 @@ def get_videos_for_topic(topic_id: int):
         "topic_id": topic_id,
         "topic_title": topic_item["title"],
         "videos": combined
+    }
+
+
+@app.get("/api/topics/{topic_id}/vocabularies")
+def get_vocabularies_for_topic(topic_id: int):
+    """
+    Lấy danh sách từ vựng chuẩn IELTS Speaking Band 7.5 - 9.0 theo chủ đề.
+    Mỗi từ có phiên âm IPA, loại từ, nghĩa tiếng Việt, câu hỏi Speaking và câu ngữ cảnh thực tế.
+    """
+    topic_item = next((t for t in topics.IELTS_TOPICS if t["id"] == topic_id), None)
+    if not topic_item:
+        raise HTTPException(status_code=404, detail="Không tìm thấy chủ đề này")
+    vocabs = topic_vocabularies.get_vocabularies_for_topic(topic_id)
+    return {
+        "topic_id": topic_id,
+        "topic_title": topic_item["title"],
+        "short_title": topic_item["short_title"],
+        "total": len(vocabs),
+        "vocabularies": vocabs
+    }
+
+
+@app.get("/api/topics/vocabularies/search")
+def search_all_topic_vocabularies(
+    q: Optional[str] = Query(None, description="Từ khóa tra cứu từ vựng hoặc ngữ cảnh"),
+    topic_id: Optional[int] = Query(None, description="Lọc theo mã chủ đề (1-16)")
+):
+    """Tìm kiếm từ vựng học thuật theo từ khóa hoặc mã chủ đề"""
+    results = topic_vocabularies.search_topic_vocabularies(query=q or "", topic_id=topic_id)
+    return {
+        "query": q,
+        "topic_id": topic_id,
+        "total": len(results),
+        "results": results
+    }
+
+
+@app.post("/api/topics/vocabularies/save-flashcard")
+def save_topic_vocab_to_flashcard(
+    item: schemas.TopicVocabSaveRequest,
+    db: Session = Depends(get_db)
+):
+    """Lưu từ vựng của chủ đề kèm câu ngữ cảnh vào bộ Flashcard"""
+    # Đảm bảo có video liên kết để thỏa mãn ràng buộc khóa ngoại
+    first_video = db.query(models.Video).first()
+    if not first_video:
+        first_video = models.Video(
+            title="IELTS Speaking Essential Vocabulary",
+            topic=topics.IELTS_TOPICS[0]["title"],
+            filename="system_vocab.mp4",
+            filepath="system"
+        )
+        db.add(first_video)
+        db.commit()
+        db.refresh(first_video)
+
+    # Kiểm tra xem từ này đã tồn tại trong flashcard chưa
+    existing = db.query(models.Flashcard).filter(models.Flashcard.word == item.word.strip()).first()
+    if existing:
+        return {
+            "success": True,
+            "message": f"Từ '{item.word}' đã có trong bộ Flashcard của bạn!",
+            "flashcard_id": existing.id,
+            "already_exists": True
+        }
+
+    fc = models.Flashcard(
+        word=item.word.strip(),
+        meaning=item.meaning.strip(),
+        context_sentence=item.context_sentence.strip(),
+        video_id=first_video.id,
+        start_time=0.0,
+        end_time=0.0,
+        status="learning"
+    )
+    db.add(fc)
+    db.commit()
+    db.refresh(fc)
+
+    return {
+        "success": True,
+        "message": f"Đã thêm từ '{item.word}' kèm ngữ cảnh vào Flashcard thành công!",
+        "flashcard_id": fc.id,
+        "already_exists": False
     }
 
 
