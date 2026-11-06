@@ -20,6 +20,8 @@ class VideoResponse(VideoBase):
     duration: float
     created_at: datetime
     topic: Optional[str] = "1. Work & Study (Công việc và Học tập)"
+    description: Optional[str] = None
+    source_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -56,6 +58,32 @@ class SearchResultItem(BaseModel):
     word_end_time: float
     sentence_start_time: float
     sentence_end_time: float
+
+
+# === DESCRIPTION VOCABULARY SCHEMAS ===
+class ScanDescriptionRequest(BaseModel):
+    description_text: Optional[str] = None
+    source_url: Optional[str] = None
+
+class DescriptionMatchedVocabItem(BaseModel):
+    word: str
+    raw_entry: Optional[str] = None
+    definition_in_desc: Optional[str] = None
+    vietnamese_meaning: str
+    vietnamese_suggestions: List[str] = []
+    context_sentence: str
+    sentence_start_time: float
+    sentence_end_time: float
+    word_start_time: float
+    word_end_time: float
+    occurrences_count: int = 1
+
+class ScanDescriptionResponse(BaseModel):
+    video_id: int
+    video_title: str
+    description: str
+    total_found: int
+    matched_vocab: List[DescriptionMatchedVocabItem]
 
 
 # === FLASHCARD SCHEMAS ===

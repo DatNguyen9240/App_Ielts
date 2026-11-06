@@ -131,6 +131,25 @@ const DOM = {
     replaySentenceContext: document.getElementById("replaySentenceContext"),
     replayModalTitle: document.getElementById("replayModalTitle"),
     jumpToMainPlayerBtn: document.getElementById("jumpToMainPlayerBtn"),
+
+    // Description Vocabulary Feature
+    openDescVocabModalBtn: document.getElementById("openDescVocabModalBtn"),
+    quickDescVocabBtn: document.getElementById("quickDescVocabBtn"),
+    descVocabModal: document.getElementById("descVocabModal"),
+    closeDescVocabModalBtn: document.getElementById("closeDescVocabModalBtn"),
+    descVocabTextarea: document.getElementById("descVocabTextarea"),
+    descInputContainer: document.getElementById("descInputContainer"),
+    toggleDescExpandBtn: document.getElementById("toggleDescExpandBtn"),
+    toggleDescExpandText: document.getElementById("toggleDescExpandText"),
+    toggleDescExpandIcon: document.getElementById("toggleDescExpandIcon"),
+    descSourceUrlNotice: document.getElementById("descSourceUrlNotice"),
+    fetchDescFromYoutubeBtn: document.getElementById("fetchDescFromYoutubeBtn"),
+    runScanDescBtn: document.getElementById("runScanDescBtn"),
+    descScanLoading: document.getElementById("descScanLoading"),
+    descResultsContainer: document.getElementById("descResultsContainer"),
+    descScanStats: document.getElementById("descScanStats"),
+    descScanCountBadge: document.getElementById("descScanCountBadge"),
+    descMatchedList: document.getElementById("descMatchedList"),
 };
 
 
@@ -409,6 +428,30 @@ const API = {
             method: "DELETE"
         });
         if (!res.ok) throw new Error("Không thể xóa Flashcard");
+        return await res.json();
+    },
+
+    async fetchVideoDescription(videoId) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/videos/${videoId}/description`);
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (e) {
+            console.warn("Lỗi tải description video:", e);
+            return null;
+        }
+    },
+
+    async scanDescriptionVocab(videoId, data = {}) {
+        const res = await fetch(`${API_BASE_URL}/api/videos/${videoId}/description/scan`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || "Không thể quét từ vựng description");
+        }
         return await res.json();
     }
 };
@@ -1068,6 +1111,184 @@ async function openAddFlashcardModal(item, queryWord) {
 }
 
 
+// ==================== DESCRIPTION VOCABULARY SCANNING ====================
+
+/**
+ * Mở modal Quét từ vựng từ Description của video hiện tại
+ */
+async function openDescriptionVocabModal() {
+    if (!state.currentVideo) {
+        showToast("Vui lòng chọn 1 video trước khi quét description!", "warning");
+        return;
+    }
+
+    DOM.descVocabModal.classList.remove("hidden");
+    DOM.descScanLoading.classList.add("hidden");
+
+    // Hiển thị thông báo link nguồn nếu có
+    if (state.currentVideo.source_url) {
+        DOM.descSourceUrlNotice.innerText = `Nguồn: ${state.currentVideo.source_url}`;
+        DOM.fetchDescFromYoutubeBtn.classList.remove("hidden");
+    } else {
+        DOM.descSourceUrlNotice.innerText = "";
+        DOM.fetchDescFromYoutubeBtn.classList.add("hidden");
+    }
+
+    // Nạp description đã lưu (hoặc lấy từ server)
+    try {
+        const descData = await API.fetchVideoDescription(state.currentVideo.id);
+        if (descData && descData.description) {
+            DOM.descVocabTextarea.value = descData.description;
+            state.currentVideo.description = descData.description;
+            if (descData.source_url) state.currentVideo.source_url = descData.source_url;
+        } else if (state.currentVideo.description) {
+            DOM.descVocabTextarea.value = state.currentVideo.description;
+        } else {
+            DOM.descVocabTextarea.value = "";
+        }
+    } catch (e) {
+        DOM.descVocabTextarea.value = state.currentVideo.description || "";
+    }
+
+    // Tự động quét nếu đã có nội dung description
+    if (DOM.descVocabTextarea.value.trim().length > 10) {
+        await executeDescriptionScan();
+    }
+}
+
+/**
+ * Đóng modal Description
+ */
+function closeDescriptionVocabModal() {
+    DOM.descVocabModal.classList.add("hidden");
+}
+
+/**
+ * Thực hiện gọi API quét từ vựng trong description và đối chiếu với video
+ */
+async function executeDescriptionScan() {
+    if (!state.currentVideo) return;
+
+    const descText = DOM.descVocabTextarea.value.trim();
+    if (!descText) {
+        showToast("Vui lòng nhập hoặc dán nội dung mô tả video (description)!", "warning");
+        DOM.descVocabTextarea.focus();
+        return;
+    }
+
+    DOM.descScanLoading.classList.remove("hidden");
+    DOM.descMatchedList.innerHTML = "";
+    DOM.runScanDescBtn.disabled = true;
+
+    try {
+        const result = await API.scanDescriptionVocab(state.currentVideo.id, {
+            description_text: descText,
+            source_url: state.currentVideo.source_url || null
+        });
+
+        DOM.descScanLoading.classList.add("hidden");
+        const list = result.matched_vocab || [];
+
+        DOM.descScanCountBadge.innerText = `${list.length} từ vựng`;
+        DOM.descScanCountBadge.classList.remove("hidden");
+        DOM.descScanStats.innerHTML = `
+            <i class="fa-solid fa-spell-check text-indigo-600"></i>
+            <span>Tìm thấy <b>${list.length}</b> từ vựng xuất hiện trong video:</span>
+        `;
+
+        if (list.length === 0) {
+            DOM.descMatchedList.innerHTML = `
+                <div class="py-10 text-center text-slate-400 bg-slate-50/70 rounded-2xl border border-dashed border-slate-200 p-6 space-y-2">
+                    <i class="fa-regular fa-face-meh text-3xl text-slate-300"></i>
+                    <p class="text-xs font-semibold text-slate-700">Chưa tìm thấy từ nào trong description xuất hiện trong bài nói này</p>
+                    <p class="text-[11px] text-slate-400 max-w-md mx-auto">Bạn có thể tự tay gõ hoặc dán thêm các từ vựng/câu vào ô mô tả bên trên rồi bấm "Dò từ vựng trong video".</p>
+                </div>
+            `;
+            return;
+        }
+
+        list.forEach((item, index) => {
+            const card = document.createElement("div");
+            card.className = "bg-white p-4 rounded-xl border border-slate-200 hover:border-indigo-300 hover:shadow-md transition space-y-2.5";
+
+            // Tạo câu ngữ cảnh có highlight từ vựng
+            const escapedWord = item.word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const highlightRegex = new RegExp(`(${escapedWord})`, "gi");
+            const highlightedSentence = item.context_sentence.replace(highlightRegex, `<mark class="vocab-highlight">$1</mark>`);
+
+            let descDefHtml = "";
+            if (item.definition_in_desc) {
+                descDefHtml = `<div class="text-[11px] text-slate-500 italic bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100 flex items-center space-x-1.5"><i class="fa-solid fa-quote-left text-[10px] text-indigo-400"></i><span>${item.definition_in_desc}</span></div>`;
+            }
+
+            let vnMeaningHtml = "";
+            if (item.vietnamese_meaning) {
+                vnMeaningHtml = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"><i class="fa-solid fa-language mr-1"></i>${item.vietnamese_meaning}</span>`;
+            }
+
+            card.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-slate-100">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-700 font-bold text-xs flex items-center justify-center flex-shrink-0">${index + 1}</span>
+                        <h4 class="text-sm font-extrabold text-indigo-600">${item.word}</h4>
+                        ${vnMeaningHtml}
+                    </div>
+                    <div class="flex items-center space-x-2 text-xs">
+                        <span class="text-slate-400 text-[11px]"><i class="fa-solid fa-clock text-slate-400 mr-1"></i>${formatTime(item.sentence_start_time)}</span>
+                        ${item.occurrences_count > 1 ? `<span class="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold">${item.occurrences_count} lần nói</span>` : ''}
+                    </div>
+                </div>
+                ${descDefHtml}
+                <div class="text-xs text-slate-700 leading-relaxed bg-slate-50/50 p-2.5 rounded-xl border border-slate-100">
+                    "${highlightedSentence}"
+                </div>
+                <div class="flex items-center justify-end space-x-2 pt-1">
+                    <button class="jump-sentence-btn px-3 py-1.5 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700 rounded-xl text-xs font-semibold transition flex items-center space-x-1">
+                        <i class="fa-solid fa-play text-[10px]"></i>
+                        <span>Nghe đoạn này (${formatTime(item.sentence_start_time)})</span>
+                    </button>
+                    <button class="add-fc-btn px-3 py-1.5 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 rounded-xl text-xs font-bold border border-indigo-200 hover:border-indigo-600 transition flex items-center space-x-1">
+                        <i class="fa-solid fa-plus text-[10px]"></i>
+                        <span>Thêm Flashcard</span>
+                    </button>
+                </div>
+            `;
+
+            // Bấm nghe đoạn này
+            card.querySelector(".jump-sentence-btn").onclick = () => {
+                seekVideo(item.sentence_start_time, true);
+                showToast(`Đang phát đoạn chứa từ "${item.word}" (${formatTime(item.sentence_start_time)})`, "info", 2500);
+            };
+
+            // Bấm thêm Flashcard
+            card.querySelector(".add-fc-btn").onclick = () => {
+                openAddFlashcardModal({
+                    matched_word: item.word,
+                    context_sentence: item.context_sentence,
+                    video_id: state.currentVideo.id,
+                    video_title: state.currentVideo.title,
+                    word_start_time: item.word_start_time || item.sentence_start_time,
+                    word_end_time: item.word_end_time || item.sentence_end_time
+                }, item.word);
+
+                // Điền trước nghĩa tiếng Việt nếu đã có
+                if (item.vietnamese_meaning) {
+                    DOM.fcMeaningInput.value = item.vietnamese_meaning;
+                }
+            };
+
+            DOM.descMatchedList.appendChild(card);
+        });
+
+    } catch (err) {
+        showToast("Lỗi khi quét từ vựng description: " + err.message, "error", 5000);
+        DOM.descScanLoading.classList.add("hidden");
+    } finally {
+        DOM.runScanDescBtn.disabled = false;
+    }
+}
+
+
 // ==================== EVENT LISTENERS SETUP ====================
 function setupEventListeners() {
     // Tab switching
@@ -1320,10 +1541,66 @@ function setupEventListeners() {
         });
     }
 
+    // Description Vocabulary Event Listeners
+    if (DOM.openDescVocabModalBtn) {
+        DOM.openDescVocabModalBtn.addEventListener("click", openDescriptionVocabModal);
+    }
+    if (DOM.quickDescVocabBtn) {
+        DOM.quickDescVocabBtn.addEventListener("click", openDescriptionVocabModal);
+    }
+    if (DOM.closeDescVocabModalBtn) {
+        DOM.closeDescVocabModalBtn.addEventListener("click", closeDescriptionVocabModal);
+    }
+    if (DOM.descVocabModal) {
+        DOM.descVocabModal.addEventListener("click", (e) => {
+            if (e.target === DOM.descVocabModal) closeDescriptionVocabModal();
+        });
+    }
+    if (DOM.runScanDescBtn) {
+        DOM.runScanDescBtn.addEventListener("click", executeDescriptionScan);
+    }
+    if (DOM.fetchDescFromYoutubeBtn) {
+        DOM.fetchDescFromYoutubeBtn.addEventListener("click", async () => {
+            if (!state.currentVideo || !state.currentVideo.source_url) {
+                showToast("Video này không có link YouTube gốc!", "warning");
+                return;
+            }
+            showToast("Đang tải lại mô tả từ YouTube...", "info", 2000);
+            try {
+                const descData = await API.fetchVideoDescription(state.currentVideo.id);
+                if (descData && descData.description) {
+                    DOM.descVocabTextarea.value = descData.description;
+                    state.currentVideo.description = descData.description;
+                    showToast("Đã cập nhật mô tả từ YouTube!", "success", 2500);
+                    await executeDescriptionScan();
+                } else {
+                    showToast("Không tìm thấy mô tả trên YouTube cho video này", "warning");
+                }
+            } catch (err) {
+                showToast("Lỗi khi tải mô tả: " + err.message, "error");
+            }
+        });
+    }
+    if (DOM.toggleDescExpandBtn) {
+        DOM.toggleDescExpandBtn.addEventListener("click", () => {
+            const isHidden = DOM.descInputContainer.classList.contains("hidden");
+            if (isHidden) {
+                DOM.descInputContainer.classList.remove("hidden");
+                DOM.toggleDescExpandText.innerText = "Thu gọn";
+                DOM.toggleDescExpandIcon.className = "fa-solid fa-chevron-up text-[10px]";
+            } else {
+                DOM.descInputContainer.classList.add("hidden");
+                DOM.toggleDescExpandText.innerText = "Mở rộng";
+                DOM.toggleDescExpandIcon.className = "fa-solid fa-chevron-down text-[10px]";
+            }
+        });
+    }
+
     // Phím Escape để đóng tất cả các modal đang mở
     window.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
             closeWatchVideoModal();
+            closeDescriptionVocabModal();
             closeModal(DOM.uploadModal);
             closeModal(DOM.flashcardModal);
             DOM.replayVideo.pause();

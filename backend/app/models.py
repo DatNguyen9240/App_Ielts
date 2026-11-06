@@ -12,6 +12,8 @@ class Video(Base):
     filename = Column(String(255), nullable=False)
     filepath = Column(String(500), nullable=False)
     duration = Column(Float, default=0.0)
+    description = Column(Text, nullable=True)  # Nội dung mô tả video từ YouTube hoặc người dùng nhập
+    source_url = Column(String(500), nullable=True)  # Link gốc video (nếu có)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Quan hệ với các bảng khác

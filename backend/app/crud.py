@@ -13,7 +13,9 @@ def create_video_with_transcripts(
     filepath: str, 
     duration: float, 
     segments_data: List[dict],
-    topic: Optional[str] = None
+    topic: Optional[str] = None,
+    description: Optional[str] = None,
+    source_url: Optional[str] = None
 ) -> models.Video:
     """Lưu video cùng toàn bộ câu (segments) và mốc từ vựng (words) vào SQLite theo quan hệ quan hệ 1-N"""
     # 1. Tạo bản ghi Video
@@ -22,7 +24,9 @@ def create_video_with_transcripts(
         topic=topic or "1. Work & Study (Công việc và Học tập)",
         filename=filename,
         filepath=filepath,
-        duration=duration
+        duration=duration,
+        description=description,
+        source_url=source_url
     )
     db.add(db_video)
     db.flush()  # Sinh id cho db_video
@@ -59,7 +63,7 @@ def create_video_with_transcripts(
 def get_videos(db: Session, topic: Optional[str] = None) -> List[models.Video]:
     """Lấy danh sách video, có thể lọc theo chủ đề (topic)"""
     query = db.query(models.Video)
-    if topic and topic.strip() and topic.lower() != "all":
+    if topic and isinstance(topic, str) and topic.strip() and topic.lower() != "all":
         query = query.filter(models.Video.topic == topic.strip())
     return query.order_by(desc(models.Video.created_at)).all()
 
@@ -67,6 +71,19 @@ def get_videos(db: Session, topic: Optional[str] = None) -> List[models.Video]:
 def get_video_by_id(db: Session, video_id: int) -> Optional[models.Video]:
     """Lấy thông tin chi tiết một video"""
     return db.query(models.Video).filter(models.Video.id == video_id).first()
+
+
+def update_video_description(db: Session, video_id: int, description: str, source_url: Optional[str] = None) -> Optional[models.Video]:
+    """Cập nhật nội dung mô tả cho video"""
+    video = get_video_by_id(db, video_id)
+    if not video:
+        return None
+    video.description = description
+    if source_url:
+        video.source_url = source_url
+    db.commit()
+    db.refresh(video)
+    return video
 
 
 # ==================== VOCABULARY SEARCH ====================

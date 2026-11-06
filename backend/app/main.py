@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .database import engine, Base, get_db
-from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos
+from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos, description_service
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -161,7 +161,7 @@ async def process_video_from_url(
     # 1. Tải video qua yt-dlp (Kèm kiểm duyệt an ninh đa tầng)
     try:
         logger.info(f"Đang tải video từ đường link: {url}...")
-        downloaded_filepath, detected_title, _ = downloader.download_video_from_url(
+        downloaded_filepath, detected_title, _, detected_desc = downloader.download_video_from_url(
             url=url, 
             output_dir=UPLOAD_DIR
         )
@@ -198,7 +198,9 @@ async def process_video_from_url(
         filepath=f"/uploads/{filename}",
         duration=whisper_data["duration"],
         segments_data=whisper_data["segments"],
-        topic=assigned_topic
+        topic=assigned_topic,
+        description=detected_desc,
+        source_url=url
     )
 
     logger.info(f"Video từ URL đã xử lý hoàn tất (ID: {video_record.id}, Tiêu đề: {video_title}, Chủ đề: {assigned_topic})")
@@ -217,7 +219,7 @@ def get_all_videos(
 
 @app.get("/api/videos/{video_id}")
 def get_video_detail(video_id: int, db: Session = Depends(get_db)):
-    """Lấy thông tin chi tiết video kèm danh sách các câu phụ đề"""
+    """Lấy thông tin chi tiết video kèm danh sách các câu phụ đề và mô tả"""
     video = crud.get_video_by_id(db, video_id)
     if not video:
         raise HTTPException(status_code=404, detail="Không tìm thấy video")
@@ -238,9 +240,68 @@ def get_video_detail(video_id: int, db: Session = Depends(get_db)):
         "filename": video.filename,
         "filepath": video.filepath,
         "duration": video.duration,
+        "description": video.description or "",
+        "source_url": video.source_url or "",
         "created_at": video.created_at,
         "segments": segments
     }
+
+
+# ==================== DESCRIPTION VOCABULARY SCANNING ====================
+
+@app.get("/api/videos/{video_id}/description")
+def get_video_description(video_id: int, db: Session = Depends(get_db)):
+    """Lấy nội dung mô tả (description) của video, nếu rỗng thì thử lấy từ YouTube nếu có source_url"""
+    video = crud.get_video_by_id(db, video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail="Không tìm thấy video")
+    
+    desc = video.description or ""
+    if not desc and video.source_url:
+        desc = downloader.fetch_video_description_from_url(video.source_url)
+        if desc:
+            crud.update_video_description(db, video_id, desc)
+
+    return {
+        "video_id": video.id,
+        "title": video.title,
+        "description": desc,
+        "source_url": video.source_url or ""
+    }
+
+
+@app.post("/api/videos/{video_id}/description/scan", response_model=schemas.ScanDescriptionResponse)
+def scan_video_description_vocab(
+    video_id: int,
+    req: Optional[schemas.ScanDescriptionRequest] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Trích xuất từ vựng trong Description và dò tìm câu nói thực tế trong video sử dụng từ vựng đó.
+    Trả về danh sách câu phát âm, mốc thời gian tua và gợi ý nghĩa tiếng Việt.
+    """
+    try:
+        custom_desc = req.description_text if req else None
+        source_url = req.source_url if req else None
+        
+        # Nếu có source_url truyền vào mà video chưa có, cập nhật source_url
+        if source_url:
+            video = crud.get_video_by_id(db, video_id)
+            if video and not video.source_url:
+                video.source_url = source_url
+                db.commit()
+
+        result = description_service.match_description_vocab_with_video(
+            db=db,
+            video_id=video_id,
+            description_text=custom_desc
+        )
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Lỗi khi quét từ vựng description: {e}")
+        raise HTTPException(status_code=500, detail=f"Không thể quét từ vựng description: {str(e)}")
 
 
 # ==================== VOCABULARY SEARCH ENDPOINTS ====================

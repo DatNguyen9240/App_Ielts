@@ -104,6 +104,7 @@ def download_video_from_url(url: str, output_dir: str) -> Tuple[str, str, float]
 
         video_title = info.get('title', 'Video từ Link')
         duration = float(info.get('duration', 0.0) or 0.0)
+        description = info.get('description', '') or ''
         
         downloaded_file = ydl.prepare_filename(info)
         base_name, _ = os.path.splitext(downloaded_file)
@@ -126,4 +127,28 @@ def download_video_from_url(url: str, output_dir: str) -> Tuple[str, str, float]
         final_file = apply_faststart(final_file)
 
         logger.info(f"Tải và kiểm định video thành công: {final_file} ({duration}s)")
-        return final_file, video_title, duration
+        return final_file, video_title, duration, description
+
+
+def fetch_video_description_from_url(url: str) -> str:
+    """Trích xuất nội dung mô tả (description) của video YouTube mà không cần tải video về"""
+    import yt_dlp
+    ydl_opts = {
+        'skip_download': True,
+        'quiet': True,
+        'no_warnings': True,
+        'socket_timeout': 10
+    }
+    ffmpeg_path = get_ffmpeg_binary_path()
+    if ffmpeg_path:
+        ydl_opts['ffmpeg_location'] = ffmpeg_path
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if 'entries' in info and info['entries']:
+                info = info['entries'][0]
+            return info.get('description', '') or ''
+    except Exception as e:
+        logger.warning(f"Không thể lấy description từ {url}: {e}")
+        return ""

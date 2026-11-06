@@ -16,6 +16,26 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+def ensure_database_schema():
+    """Tự động kiểm tra và nâng cấp schema nếu database đã tồn tại từ trước"""
+    try:
+        import sqlite3
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(videos);")
+        cols = [c[1] for c in cursor.fetchall()]
+        if cols:
+            if "description" not in cols:
+                cursor.execute("ALTER TABLE videos ADD COLUMN description TEXT;")
+            if "source_url" not in cols:
+                cursor.execute("ALTER TABLE videos ADD COLUMN source_url VARCHAR(500);")
+            conn.commit()
+        conn.close()
+    except Exception as e:
+        pass
+
+ensure_database_schema()
+
 def get_db():
     """Dependency injection cung cấp database session cho mỗi request"""
     db = SessionLocal()
