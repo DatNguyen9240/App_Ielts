@@ -608,6 +608,32 @@
         </div>
     </div>
 
+    <!-- 5. Toast Notifications Container -->
+    <div id="toastContainer" class="fixed top-5 right-5 z-[9999] flex flex-col space-y-2.5 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
+
+    <!-- 6. Custom Confirmation Modal -->
+    <div id="customConfirmModal" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[9998] hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 transform transition-all space-y-4">
+            <div class="flex items-start space-x-3.5">
+                <div id="confirmModalIconWrapper" class="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 text-xl shadow-inner">
+                    <i id="confirmModalIcon" class="fa-solid fa-circle-question"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h3 id="confirmModalTitle" class="text-base font-bold text-slate-900 leading-snug">Xác nhận</h3>
+                    <p id="confirmModalMessage" class="text-xs text-slate-500 mt-1.5 leading-relaxed whitespace-pre-line"></p>
+                </div>
+            </div>
+            <div class="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+                <button id="confirmCancelBtn" type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition">
+                    Hủy bỏ
+                </button>
+                <button id="confirmOkBtn" type="button" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-600/30 transition">
+                    Đồng ý
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- JavaScript App Logic -->
     <script src="/js/app.js"></script>
 </body>

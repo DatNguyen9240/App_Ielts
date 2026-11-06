@@ -134,6 +134,137 @@ const DOM = {
 };
 
 
+// ==================== MODERN TOAST & CONFIRM DIALOG SYSTEM ====================
+
+/**
+ * Hiển thị thông báo Toast hiện đại thay thế cho browser alert()
+ * @param {string} message - Nội dung thông báo
+ * @param {"success" | "error" | "warning" | "info"} type - Phân loại
+ * @param {number} duration - Thời gian hiển thị (ms)
+ */
+function showToast(message, type = "info", duration = 3500) {
+    const container = document.getElementById("toastContainer");
+    if (!container) return;
+
+    const toast = document.createElement("div");
+    toast.className = "toast-item flex items-center p-3.5 rounded-xl border shadow-lg text-xs font-medium space-x-3 transition-all";
+
+    let bgBorderClass = "bg-white border-slate-200 text-slate-800 shadow-slate-200/50";
+    let iconHtml = '<div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-circle-info text-xs"></i></div>';
+
+    if (type === "success") {
+        bgBorderClass = "bg-white border-emerald-200 text-slate-800 shadow-emerald-500/10";
+        iconHtml = '<div class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-check text-xs"></i></div>';
+    } else if (type === "error") {
+        bgBorderClass = "bg-white border-rose-200 text-slate-800 shadow-rose-500/10";
+        iconHtml = '<div class="w-6 h-6 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-xmark text-xs"></i></div>';
+    } else if (type === "warning") {
+        bgBorderClass = "bg-white border-amber-200 text-slate-800 shadow-amber-500/10";
+        iconHtml = '<div class="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-triangle-exclamation text-xs"></i></div>';
+    }
+
+    toast.className += " " + bgBorderClass;
+    toast.innerHTML = `
+        ${iconHtml}
+        <div class="flex-1 leading-snug break-words">${message}</div>
+        <button type="button" class="text-slate-400 hover:text-slate-600 p-1 rounded-md transition ml-1 flex-shrink-0">
+            <i class="fa-solid fa-xmark text-xs"></i>
+        </button>
+    `;
+
+    const closeBtn = toast.querySelector("button");
+    const removeToast = () => {
+        if (toast.classList.contains("toast-closing")) return;
+        toast.classList.add("toast-closing");
+        setTimeout(() => toast.remove(), 220);
+    };
+
+    closeBtn.onclick = removeToast;
+    const timer = setTimeout(removeToast, duration);
+
+    toast.onmouseenter = () => clearTimeout(timer);
+    toast.onmouseleave = () => setTimeout(removeToast, 1500);
+
+    container.appendChild(toast);
+}
+
+/**
+ * Hiển thị hộp thoại xác nhận hiện đại thay thế cho confirm()
+ * @param {Object} options
+ * @param {string} options.title - Tiêu đề
+ * @param {string} options.message - Nội dung
+ * @param {string} [options.confirmText="Đồng ý"]
+ * @param {string} [options.cancelText="Hủy bỏ"]
+ * @param {"indigo" | "red"} [options.confirmColor="indigo"]
+ * @param {string} [options.icon="fa-circle-question"]
+ * @returns {Promise<boolean>}
+ */
+function showConfirm({
+    title = "Xác nhận",
+    message = "",
+    confirmText = "Đồng ý",
+    cancelText = "Hủy bỏ",
+    confirmColor = "indigo",
+    icon = "fa-circle-question"
+} = {}) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById("customConfirmModal");
+        const titleEl = document.getElementById("confirmModalTitle");
+        const msgEl = document.getElementById("confirmModalMessage");
+        const iconWrapper = document.getElementById("confirmModalIconWrapper");
+        const iconEl = document.getElementById("confirmModalIcon");
+        const cancelBtn = document.getElementById("confirmCancelBtn");
+        const okBtn = document.getElementById("confirmOkBtn");
+
+        if (!modal || !okBtn || !cancelBtn) {
+            resolve(window.confirm(`${title}\n\n${message}`));
+            return;
+        }
+
+        titleEl.innerText = title;
+        msgEl.innerText = message;
+        cancelBtn.innerText = cancelText;
+        okBtn.innerText = confirmText;
+
+        if (confirmColor === "red") {
+            okBtn.className = "px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md shadow-rose-600/30 transition";
+            iconWrapper.className = "w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0 text-xl shadow-inner";
+        } else {
+            okBtn.className = "px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-600/30 transition";
+            iconWrapper.className = "w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 text-xl shadow-inner";
+        }
+
+        iconEl.className = `fa-solid ${icon}`;
+
+        const cleanup = (result) => {
+            modal.classList.add("hidden");
+            okBtn.onclick = null;
+            cancelBtn.onclick = null;
+            modal.onclick = null;
+            window.removeEventListener("keydown", handleKey);
+            resolve(result);
+        };
+
+        const handleKey = (e) => {
+            if (e.key === "Escape") cleanup(false);
+            if (e.key === "Enter") cleanup(true);
+        };
+
+        okBtn.onclick = () => cleanup(true);
+        cancelBtn.onclick = () => cleanup(false);
+        modal.onclick = (e) => {
+            if (e.target === modal) cleanup(false);
+        };
+        window.addEventListener("keydown", handleKey);
+
+        modal.classList.remove("hidden");
+    });
+}
+
+// Ghi đè window.alert để triệt tiêu mọi alert() còn sót lại
+window.alert = (msg) => showToast(String(msg), "info");
+
+
 // ==================== HELPER FUNCTIONS ====================
 
 /**
@@ -511,7 +642,14 @@ function closeWatchVideoModal() {
  * Tự động tải video từ danh mục chủ đề và chạy Whisper để đưa vào "Video của tôi"
  */
 async function triggerImportTopicVideo(video, topicTitle) {
-    if (!confirm(`Bạn có muốn tải và phân tích từ vựng video:\n"${video.title}"\nbằng Whisper để đưa vào "Video của tôi" không?\n(Quá trình sẽ mất khoảng 1-2 phút)`)) return;
+    const ok = await showConfirm({
+        title: "Học từ vựng từ Video mẫu",
+        message: `Hệ thống sẽ tải video và dùng Whisper bóc tách mốc thời gian từng từ cho bài thi:\n"${video.title}".\n\n(Quá trình xử lý sẽ mất khoảng 1-2 phút)`,
+        confirmText: "Bắt đầu học ngay",
+        confirmColor: "indigo",
+        icon: "fa-wand-magic-sparkles"
+    });
+    if (!ok) return;
 
     closeWatchVideoModal();
 
@@ -528,14 +666,14 @@ async function triggerImportTopicVideo(video, topicTitle) {
             topic: topicTitle,
             model_name: "base"
         });
-        alert(`Đã trích xuất xong từ vựng cho video "${uploaded.title}"!`);
+        showToast(`Đã trích xuất xong từ vựng cho video "${uploaded.title}"!`, "success", 4500);
         DOM.uploadModal.classList.add("hidden");
         // Nạp lại danh sách video của tôi và chuyển sang xem ngay
         await loadVideos();
         showMyVideosTab();
         selectVideo(uploaded.id);
     } catch (err) {
-        alert("Lỗi khi xử lý video: " + err.message);
+        showToast("Lỗi khi xử lý video: " + err.message, "error", 5000);
     } finally {
         DOM.uploadProgressBox.classList.add("hidden");
         DOM.submitUrlBtn.disabled = false;
@@ -1026,8 +1164,9 @@ function setupEventListeners() {
             await API.updateFlashcard(card.id, { status: newStatus });
             card.status = newStatus;
             renderCurrentFlashcard();
+            showToast(newStatus === "mastered" ? `Đã đánh dấu thuộc từ "${card.word}"!` : `Đã chuyển "${card.word}" về đang học`, "success", 2500);
         } catch (e) {
-            alert("Lỗi khi cập nhật trạng thái thẻ");
+            showToast("Lỗi khi cập nhật trạng thái thẻ", "error");
         }
     });
 
@@ -1035,9 +1174,17 @@ function setupEventListeners() {
     DOM.deleteCardBtn.addEventListener("click", async () => {
         if (state.flashcards.length === 0) return;
         const card = state.flashcards[state.currentCardIndex];
-        if (!confirm(`Bạn có chắc muốn xóa thẻ "${card.word}"?`)) return;
+        const ok = await showConfirm({
+            title: "Xác nhận xóa Flashcard",
+            message: `Bạn có chắc chắn muốn xóa thẻ từ vựng "${card.word}" không?\nThao tác này không thể hoàn tác.`,
+            confirmText: "Xóa thẻ",
+            confirmColor: "red",
+            icon: "fa-trash-can"
+        });
+        if (!ok) return;
 
         try {
+            const deletedWord = card.word;
             await API.deleteFlashcard(card.id);
             state.flashcards.splice(state.currentCardIndex, 1);
             if (state.currentCardIndex >= state.flashcards.length) {
@@ -1050,8 +1197,9 @@ function setupEventListeners() {
             } else {
                 renderCurrentFlashcard();
             }
+            showToast(`Đã xóa thẻ từ vựng "${deletedWord}"`, "info", 3000);
         } catch (e) {
-            alert("Lỗi khi xóa Flashcard");
+            showToast("Lỗi khi xóa Flashcard: " + e.message, "error");
         }
     });
 
@@ -1105,9 +1253,9 @@ function setupEventListeners() {
             state.flashcards.unshift(newCard);
             updateFlashcardBadgeCount();
             DOM.flashcardModal.classList.add("hidden");
-            alert(`Đã thêm từ "${payload.word}" vào bộ Flashcard thành công!`);
+            showToast(`Đã thêm từ "${payload.word}" vào bộ Flashcard thành công!`, "success", 3500);
         } catch (err) {
-            alert("Không thể lưu Flashcard: " + err.message);
+            showToast("Không thể lưu Flashcard: " + err.message, "error");
         }
     });
 
@@ -1187,7 +1335,7 @@ function setupEventListeners() {
         e.preventDefault();
         const url = DOM.videoUrlInput.value.trim();
         if (!url) {
-            alert("Vui lòng dán đường link video hợp lệ!");
+            showToast("Vui lòng dán đường link video hợp lệ!", "warning");
             return;
         }
 
@@ -1206,14 +1354,14 @@ function setupEventListeners() {
 
         try {
             const uploadedVideo = await API.processVideoFromUrl(payload);
-            alert(`Tải và xử lý video "${uploadedVideo.title}" thành công!`);
+            showToast(`Tải và xử lý video "${uploadedVideo.title}" thành công!`, "success", 4000);
             DOM.uploadModal.classList.add("hidden");
             DOM.urlVideoForm.reset();
             // Nạp lại danh sách video và tự động chọn video vừa tải về
             await loadVideos();
             selectVideo(uploadedVideo.id);
         } catch (err) {
-            alert("Lỗi khi xử lý video từ link: " + err.message);
+            showToast("Lỗi khi xử lý video từ link: " + err.message, "error", 5000);
         } finally {
             DOM.uploadProgressBox.classList.add("hidden");
             DOM.submitUrlBtn.disabled = false;
@@ -1226,7 +1374,7 @@ function setupEventListeners() {
         e.preventDefault();
         const file = DOM.videoFileInput.files[0];
         if (!file) {
-            alert("Vui lòng chọn 1 file video!");
+            showToast("Vui lòng chọn 1 file video!", "warning");
             return;
         }
 
@@ -1244,14 +1392,14 @@ function setupEventListeners() {
 
         try {
             const uploadedVideo = await API.uploadVideo(formData);
-            alert(`Xử lý video "${uploadedVideo.title}" hoàn tất!`);
+            showToast(`Xử lý video "${uploadedVideo.title}" hoàn tất!`, "success", 4000);
             DOM.uploadModal.classList.add("hidden");
             DOM.uploadVideoForm.reset();
             // Nạp lại danh sách video và tự động chọn video vừa upload
             await loadVideos();
             selectVideo(uploadedVideo.id);
         } catch (err) {
-            alert("Lỗi khi xử lý video: " + err.message);
+            showToast("Lỗi khi xử lý video: " + err.message, "error", 5000);
         } finally {
             DOM.uploadProgressBox.classList.add("hidden");
             DOM.submitUploadBtn.disabled = false;
