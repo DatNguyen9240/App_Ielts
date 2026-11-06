@@ -349,11 +349,18 @@ def scan_online_youtube_description_vocab(req: schemas.OnlineYoutubeScanRequest)
 @app.get("/api/youtube/search-videos")
 def search_youtube_videos(
     q: str = Query(..., description="Từ khóa tìm kiếm video trên YouTube"),
-    max_results: int = Query(24, ge=1, le=50)
+    max_results: int = Query(12, ge=1, le=50, description="Số lượng video mỗi đợt"),
+    page: int = Query(1, ge=1, description="Số trang (bắt đầu từ 1)"),
+    offset: Optional[int] = Query(None, ge=0, description="Vị trí bắt đầu nếu dùng offset")
 ):
-    """Tìm kiếm danh sách video thực tế trên YouTube theo từ khóa tùy thích"""
+    """Tìm kiếm danh sách video thực tế trên YouTube theo từ khóa tùy thích (hỗ trợ phân trang vô tận)"""
     try:
-        return youtube_service.search_youtube_videos_online(query=q, max_results=max_results)
+        return youtube_service.search_youtube_videos_online(
+            query=q, 
+            max_results=max_results,
+            page=page,
+            offset=offset
+        )
     except Exception as e:
         logger.error(f"Lỗi khi tìm kiếm video YouTube: {e}")
         raise HTTPException(status_code=500, detail=f"Lỗi tìm kiếm YouTube: {str(e)}")

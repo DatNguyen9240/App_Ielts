@@ -282,17 +282,56 @@ def search_words_in_youtube_online(youtube_id_or_url: str, query: str) -> Dict[s
     }
 
 
-def search_youtube_videos_online(query: str, max_results: int = 24) -> List[Dict[str, Any]]:
-    """Tìm kiếm danh sách video thực tế trên YouTube theo từ khóa tùy thích (15-30 kết quả phong phú)"""
+_YOUTUBE_SEARCH_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def search_youtube_videos_online(
+    query: str, 
+    max_results: int = 12, 
+    page: int = 1, 
+    offset: Optional[int] = None
+) -> Dict[str, Any]:
+    """Tìm kiếm danh sách video thực tế trên YouTube theo từ khóa tùy thích (hỗ trợ phân trang và bộ đệm cache để cuộn mượt mà)"""
     import yt_dlp
+    import time
     clean_q = query.strip()
     if not clean_q:
-        return []
+        return {
+            "query": "",
+            "page": page,
+            "page_size": max_results,
+            "has_more": False,
+            "videos": []
+        }
+
+    start_idx = offset if offset is not None else (page - 1) * max_results
+    end_idx = start_idx + max_results
+
+    cache_key = clean_q.lower()
+    now = time.time()
+
+    # Kiểm tra cache (thời hạn 15 phút = 900 giây)
+    cached = _YOUTUBE_SEARCH_CACHE.get(cache_key)
+    if cached and (now - cached.get("timestamp", 0) < 900):
+        cached_items = cached.get("videos", [])
+        if len(cached_items) >= end_idx:
+            sliced = cached_items[start_idx:end_idx]
+            return {
+                "query": clean_q,
+                "page": page,
+                "page_size": max_results,
+                "has_more": len(cached_items) > end_idx,
+                "videos": sliced
+            }
+
+    # Cần nạp từ YouTube: Tải một đợt 36 - 48 video để phục vụ cuộn mượt mà
+    fetch_target = max(end_idx + 24, 40)
+    fetch_target = min(fetch_target, 60)
 
     if re.search(r'ielts', clean_q, re.IGNORECASE):
-        search_query = f"ytsearch{max_results}:{clean_q}"
+        search_query = f"ytsearch{fetch_target}:{clean_q}"
     else:
-        search_query = f"ytsearch{max_results}:IELTS Speaking {clean_q}"
+        search_query = f"ytsearch{fetch_target}:IELTS Speaking {clean_q}"
 
     ydl_opts = {
         'extract_flat': True,
@@ -304,10 +343,12 @@ def search_youtube_videos_online(query: str, max_results: int = 24) -> List[Dict
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             res = ydl.extract_info(search_query, download=False)
             items = []
+            seen_ids = set()
             for entry in res.get('entries', []):
                 v_id = entry.get('id', '')
-                if not v_id or len(v_id) != 11:
+                if not v_id or len(v_id) != 11 or v_id in seen_ids:
                     continue
+                seen_ids.add(v_id)
 
                 title = entry.get('title', 'IELTS Speaking Video')
                 channel = entry.get('channel') or entry.get('uploader') or 'YouTube'
@@ -326,10 +367,41 @@ def search_youtube_videos_online(query: str, max_results: int = 24) -> List[Dict
                     "thumbnail": f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
                     "duration": duration if duration > 0 else 600
                 })
-            return items
+
+            # Lưu vào cache
+            _YOUTUBE_SEARCH_CACHE[cache_key] = {
+                "timestamp": now,
+                "videos": items
+            }
+
+            sliced = items[start_idx:end_idx]
+            has_more = len(items) > end_idx
+            return {
+                "query": clean_q,
+                "page": page,
+                "page_size": max_results,
+                "has_more": has_more,
+                "videos": sliced
+            }
     except Exception as e:
         logger.warning(f"Lỗi khi tìm kiếm video YouTube: {e}")
-        return []
+        if cached:
+            cached_items = cached.get("videos", [])
+            sliced = cached_items[start_idx:end_idx]
+            return {
+                "query": clean_q,
+                "page": page,
+                "page_size": max_results,
+                "has_more": len(cached_items) > end_idx,
+                "videos": sliced
+            }
+        return {
+            "query": clean_q,
+            "page": page,
+            "page_size": max_results,
+            "has_more": False,
+            "videos": []
+        }
 
 
 def fetch_youtube_pinned_or_top_comments(youtube_id_or_url: str) -> Dict[str, Any]:

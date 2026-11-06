@@ -15,7 +15,17 @@ const state = {
     isCardFlipped: false,
     searchDebounceTimer: null,
     watchingVideo: null,
-    activeScanningTarget: null // { type: "local" | "online", video: object }
+    activeScanningTarget: null, // { type: "local" | "online", video: object }
+    topicPagination: {
+        active: false,
+        query: "",
+        topicTitle: "",
+        page: 1,
+        pageSize: 12,
+        hasMore: true,
+        isLoading: false,
+        seenIds: new Set()
+    }
 };
 
 // ==================== DOM ELEMENTS ====================
@@ -33,6 +43,10 @@ const DOM = {
     topicDiscoveryTitle: document.getElementById("topicDiscoveryTitle"),
     topicVideosLoading: document.getElementById("topicVideosLoading"),
     topicVideosGrid: document.getElementById("topicVideosGrid"),
+    topicInfiniteScrollArea: document.getElementById("topicInfiniteScrollArea"),
+    infiniteScrollLoading: document.getElementById("infiniteScrollLoading"),
+    loadMoreTopicVideosBtn: document.getElementById("loadMoreTopicVideosBtn"),
+    infiniteScrollEnd: document.getElementById("infiniteScrollEnd"),
     refreshTopicVideosBtn: document.getElementById("refreshTopicVideosBtn"),
     backToMyVideosBtn: document.getElementById("backToMyVideosBtn"),
     youtubeSearchKeywordInput: document.getElementById("youtubeSearchKeywordInput"),
@@ -493,8 +507,20 @@ const API = {
         return await res.json();
     },
 
-    async searchYoutubeVideos(query, maxResults = 24) {
-        const res = await fetch(`${API_BASE_URL}/api/youtube/search-videos?q=${encodeURIComponent(query)}&max_results=${maxResults}`);
+    async searchYoutubeVideos(query, pageOrMaxResults = 1, maxResults = 12) {
+        let page = 1;
+        let limit = 12;
+        if (typeof pageOrMaxResults === "object") {
+            page = pageOrMaxResults.page || 1;
+            limit = pageOrMaxResults.maxResults || 12;
+        } else if (pageOrMaxResults > 10 && maxResults === 12) {
+            limit = pageOrMaxResults;
+            page = 1;
+        } else {
+            page = pageOrMaxResults;
+            limit = maxResults;
+        }
+        const res = await fetch(`${API_BASE_URL}/api/youtube/search-videos?q=${encodeURIComponent(query)}&page=${page}&max_results=${limit}`);
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || "Lỗi khi tìm kiếm video trên YouTube");
@@ -633,8 +659,10 @@ function renderTopicTabs() {
  */
 function showMyVideosTab() {
     state.activeTab = "my_videos";
+    if (state.topicPagination) state.topicPagination.active = false;
     DOM.myVideosView.classList.remove("hidden");
     DOM.topicDiscoveryView.classList.add("hidden");
+    if (DOM.topicInfiniteScrollArea) DOM.topicInfiniteScrollArea.classList.add("hidden");
     if (DOM.activeTopicBadge) {
         DOM.activeTopicBadge.innerText = `📁 Video của tôi (${state.videos.length} video)`;
     }
@@ -668,36 +696,45 @@ async function showTopicDiscoveryTab(topic) {
 }
 
 /**
- * Tải và hiển thị danh sách video thực tế trên YouTube theo chủ đề
+ * Tải và hiển thị danh sách video thực tế trên YouTube theo chủ đề (hỗ trợ phân trang cuộn tiếp)
  */
 async function loadAndRenderTopicVideos(topic) {
     if (!DOM.topicVideosGrid) return;
     DOM.topicVideosLoading.classList.remove("hidden");
     DOM.topicVideosGrid.innerHTML = "";
+    if (DOM.topicInfiniteScrollArea) DOM.topicInfiniteScrollArea.classList.add("hidden");
+
+    const topicQuery = topic.short_title || topic.title || "IELTS Speaking";
+
+    // Khởi tạo trạng thái phân trang vô tận
+    state.topicPagination = {
+        active: true,
+        query: topicQuery,
+        topicTitle: topic.title,
+        page: 1,
+        pageSize: 12,
+        hasMore: true,
+        isLoading: false,
+        seenIds: new Set()
+    };
 
     try {
-        // 1. Tải trước các video bài mẫu (hiển thị nhanh)
+        // 1. Tải trước các video bài mẫu (hiển thị tức thì)
         const data = await API.fetchTopicVideos(topic.id);
         const curated = data.videos || [];
-        let allVideos = [...curated];
-
-        if (allVideos.length > 0) {
-            renderVideoCards(allVideos, topic.title);
+        if (curated.length > 0) {
+            renderVideoCards(curated, topic.title, false);
         }
 
-        // 2. Tìm kiếm tự động thêm 24 video thực tế phong phú trên YouTube theo chủ đề
+        // 2. Tự động tải đợt 1 từ YouTube theo chủ đề
         try {
-            const topicKeyword = topic.short_title || topic.title || "IELTS Speaking";
-            const ytVideos = await API.searchYoutubeVideos(topicKeyword, 24);
-            if (ytVideos && ytVideos.length > 0) {
-                const seenIds = new Set(allVideos.map(v => v.id));
-                for (const v of ytVideos) {
-                    if (!seenIds.has(v.id)) {
-                        seenIds.add(v.id);
-                        allVideos.push(v);
-                    }
-                }
-                renderVideoCards(allVideos, topic.title);
+            const res = await API.searchYoutubeVideos(topicQuery, 1, state.topicPagination.pageSize);
+            const ytVideos = Array.isArray(res) ? res : (res.videos || []);
+            const hasMore = Array.isArray(res) ? (ytVideos.length >= state.topicPagination.pageSize) : Boolean(res.has_more);
+            state.topicPagination.hasMore = hasMore;
+
+            if (ytVideos.length > 0) {
+                renderVideoCards(ytVideos, topic.title, true);
             }
         } catch (eYt) {
             console.warn("Không thể tải thêm video YouTube tự động:", eYt);
@@ -705,7 +742,7 @@ async function loadAndRenderTopicVideos(topic) {
 
         DOM.topicVideosLoading.classList.add("hidden");
 
-        if (allVideos.length === 0) {
+        if (state.topicPagination.seenIds.size === 0) {
             DOM.topicVideosGrid.innerHTML = `
                 <div class="col-span-full py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 p-8 space-y-3">
                     <i class="fa-solid fa-video-slash text-4xl text-slate-300"></i>
@@ -713,6 +750,8 @@ async function loadAndRenderTopicVideos(topic) {
                     <p class="text-xs text-slate-400">Bạn có thể dán đường link video YouTube bất kỳ để thêm vào chủ đề này.</p>
                 </div>
             `;
+        } else {
+            updateInfiniteScrollUI();
         }
     } catch (err) {
         console.error("Lỗi nạp video chủ đề:", err);
@@ -722,14 +761,27 @@ async function loadAndRenderTopicVideos(topic) {
 
 /**
  * Hiển thị các thẻ video vào lưới Topic Grid với xử lý chống ảnh xám và các nút tác vụ
+ * @param {Array} videos Danh sách video
+ * @param {string} topicTitle Tiêu đề chủ đề hoặc truy vấn
+ * @param {boolean} append Nối thêm vào cuối (dùng cho phân trang cuộn tiếp)
  */
-function renderVideoCards(videos, topicTitle) {
+function renderVideoCards(videos, topicTitle, append = false) {
     if (!DOM.topicVideosGrid) return;
-    DOM.topicVideosGrid.innerHTML = "";
+    if (!append) {
+        DOM.topicVideosGrid.innerHTML = "";
+    }
 
     const fallbackImg = "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=640&q=80";
 
     videos.forEach(v => {
+        if (!v || !v.id) return;
+
+        // Tránh trùng lặp video đã có trong danh sách
+        if (state.topicPagination && state.topicPagination.seenIds) {
+            if (state.topicPagination.seenIds.has(v.id)) return;
+            state.topicPagination.seenIds.add(v.id);
+        }
+
         const card = document.createElement("div");
         card.className = "bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between group";
 
@@ -805,7 +857,7 @@ function renderVideoCards(videos, topicTitle) {
 }
 
 /**
- * Tìm kiếm video thực tế trên YouTube theo từ khóa tùy thích
+ * Tìm kiếm video thực tế trên YouTube theo từ khóa tùy thích (hỗ trợ phân trang cuộn tiếp)
  */
 async function searchYoutubeVideosOnline(query) {
     const cleanQ = (query || "").trim();
@@ -817,15 +869,32 @@ async function searchYoutubeVideosOnline(query) {
     if (!DOM.topicVideosGrid) return;
     DOM.topicVideosLoading.classList.remove("hidden");
     DOM.topicVideosGrid.innerHTML = "";
+    if (DOM.topicInfiniteScrollArea) DOM.topicInfiniteScrollArea.classList.add("hidden");
+
     if (DOM.topicDiscoveryTitle) {
         DOM.topicDiscoveryTitle.innerText = `Kết quả tìm kiếm YouTube: "${cleanQ}"`;
     }
 
+    state.topicPagination = {
+        active: true,
+        query: cleanQ,
+        topicTitle: cleanQ,
+        page: 1,
+        pageSize: 12,
+        hasMore: true,
+        isLoading: false,
+        seenIds: new Set()
+    };
+
     try {
-        const videos = await API.searchYoutubeVideos(cleanQ, 24);
+        const res = await API.searchYoutubeVideos(cleanQ, 1, state.topicPagination.pageSize);
         DOM.topicVideosLoading.classList.add("hidden");
 
-        if (!videos || videos.length === 0) {
+        const ytVideos = Array.isArray(res) ? res : (res.videos || []);
+        const hasMore = Array.isArray(res) ? (ytVideos.length >= state.topicPagination.pageSize) : Boolean(res.has_more);
+        state.topicPagination.hasMore = hasMore;
+
+        if (!ytVideos || ytVideos.length === 0) {
             DOM.topicVideosGrid.innerHTML = `
                 <div class="col-span-full py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 p-8 space-y-3">
                     <i class="fa-brands fa-youtube text-4xl text-red-400"></i>
@@ -836,12 +905,123 @@ async function searchYoutubeVideosOnline(query) {
             return;
         }
 
-        renderVideoCards(videos, cleanQ);
+        renderVideoCards(ytVideos, cleanQ, false);
+        updateInfiniteScrollUI();
     } catch (err) {
         console.error("Lỗi tìm kiếm YouTube:", err);
         DOM.topicVideosLoading.classList.add("hidden");
         showToast(`Không thể tìm kiếm video trên YouTube: ${err.message}`, "error");
     }
+}
+
+/**
+ * Cập nhật giao diện thanh trạng thái cuộn trang vô tận
+ */
+function updateInfiniteScrollUI() {
+    if (!DOM.topicInfiniteScrollArea) return;
+    if (!state.topicPagination || !state.topicPagination.active) {
+        DOM.topicInfiniteScrollArea.classList.add("hidden");
+        return;
+    }
+
+    DOM.topicInfiniteScrollArea.classList.remove("hidden");
+
+    if (state.topicPagination.isLoading) {
+        if (DOM.infiniteScrollLoading) DOM.infiniteScrollLoading.classList.remove("hidden");
+        if (DOM.loadMoreTopicVideosBtn) DOM.loadMoreTopicVideosBtn.classList.add("hidden");
+        if (DOM.infiniteScrollEnd) DOM.infiniteScrollEnd.classList.add("hidden");
+    } else if (state.topicPagination.hasMore) {
+        if (DOM.infiniteScrollLoading) DOM.infiniteScrollLoading.classList.add("hidden");
+        if (DOM.loadMoreTopicVideosBtn) DOM.loadMoreTopicVideosBtn.classList.remove("hidden");
+        if (DOM.infiniteScrollEnd) DOM.infiniteScrollEnd.classList.add("hidden");
+    } else {
+        if (DOM.infiniteScrollLoading) DOM.infiniteScrollLoading.classList.add("hidden");
+        if (DOM.loadMoreTopicVideosBtn) DOM.loadMoreTopicVideosBtn.classList.add("hidden");
+        if (DOM.infiniteScrollEnd) DOM.infiniteScrollEnd.classList.remove("hidden");
+    }
+}
+
+/**
+ * Tải thêm đợt video tiếp theo khi người dùng cuộn xuống dưới
+ */
+async function loadMoreTopicVideos() {
+    if (!state.topicPagination || !state.topicPagination.active) return;
+    if (state.topicPagination.isLoading || !state.topicPagination.hasMore) return;
+
+    state.topicPagination.isLoading = true;
+    updateInfiniteScrollUI();
+
+    const nextPage = state.topicPagination.page + 1;
+    const query = state.topicPagination.query;
+    const topicTitle = state.topicPagination.topicTitle;
+
+    try {
+        const res = await API.searchYoutubeVideos(query, nextPage, state.topicPagination.pageSize);
+        const ytVideos = Array.isArray(res) ? res : (res.videos || []);
+        const hasMore = Array.isArray(res) ? (ytVideos.length >= state.topicPagination.pageSize) : Boolean(res.has_more);
+
+        state.topicPagination.page = nextPage;
+        state.topicPagination.hasMore = hasMore;
+
+        if (ytVideos.length > 0) {
+            renderVideoCards(ytVideos, topicTitle, true);
+        } else {
+            state.topicPagination.hasMore = false;
+        }
+    } catch (err) {
+        console.warn("Lỗi tải thêm video khi cuộn:", err);
+        state.topicPagination.hasMore = false;
+    } finally {
+        state.topicPagination.isLoading = false;
+        updateInfiniteScrollUI();
+    }
+}
+
+/**
+ * Khởi tạo tính năng tự động tải thêm khi cuộn (IntersectionObserver + Scroll fallback)
+ */
+function initTopicInfiniteScroll() {
+    if (!DOM.topicInfiniteScrollArea) return;
+
+    // 1. Tự động kích hoạt khi cuộn đến gần cuối trang (IntersectionObserver)
+    if ("IntersectionObserver" in window) {
+        const observer = new IntersectionObserver((entries) => {
+            const entry = entries[0];
+            if (entry && entry.isIntersecting) {
+                if (state.topicPagination && state.topicPagination.active && state.topicPagination.hasMore && !state.topicPagination.isLoading) {
+                    loadMoreTopicVideos();
+                }
+            }
+        }, {
+            root: null,
+            rootMargin: "350px", // Kích hoạt sớm trước 350px để cuộn mượt mà không phải chờ
+            threshold: 0.05
+        });
+
+        observer.observe(DOM.topicInfiniteScrollArea);
+    }
+
+    // 2. Nút bấm xem thêm trực tiếp
+    if (DOM.loadMoreTopicVideosBtn) {
+        DOM.loadMoreTopicVideosBtn.addEventListener("click", () => {
+            loadMoreTopicVideos();
+        });
+    }
+
+    // 3. Fallback theo dõi sự kiện window scroll
+    window.addEventListener("scroll", () => {
+        if (!state.topicPagination || !state.topicPagination.active || !state.topicPagination.hasMore || state.topicPagination.isLoading) {
+            return;
+        }
+        if (DOM.topicDiscoveryView && DOM.topicDiscoveryView.classList.contains("hidden")) {
+            return;
+        }
+        const scrollPosition = window.innerHeight + window.scrollY;
+        const threshold = document.documentElement.scrollHeight - 400;
+        if (scrollPosition >= threshold) {
+            loadMoreTopicVideos();
+        }
+    }, { passive: true });
 }
 
 /**
@@ -2281,6 +2461,7 @@ function setupEventListeners() {
 // ==================== INITIALIZATION ====================
 document.addEventListener("DOMContentLoaded", async () => {
     setupEventListeners();
+    initTopicInfiniteScroll();
     await loadTopics();
     await loadVideos();
     // Tải trước số lượng flashcard để hiển thị badge
