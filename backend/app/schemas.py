@@ -5,10 +5,12 @@ from pydantic import BaseModel
 # === VIDEO SCHEMAS ===
 class VideoBase(BaseModel):
     title: str
+    topic: Optional[str] = "1. Work & Study (Công việc và Học tập)"
 
 class VideoFromUrlRequest(BaseModel):
     url: str
     title: Optional[str] = None
+    topic: Optional[str] = None
     model_name: Optional[str] = "base"
 
 class VideoResponse(VideoBase):
@@ -17,6 +19,7 @@ class VideoResponse(VideoBase):
     filepath: str
     duration: float
     created_at: datetime
+    topic: Optional[str] = "1. Work & Study (Công việc và Học tập)"
 
     class Config:
         from_attributes = True

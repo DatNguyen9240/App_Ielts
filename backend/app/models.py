@@ -8,6 +8,7 @@ class Video(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
+    topic = Column(String(255), nullable=True, default="1. Work & Study (Công việc và Học tập)")
     filename = Column(String(255), nullable=False)
     filepath = Column(String(500), nullable=False)
     duration = Column(Float, default=0.0)

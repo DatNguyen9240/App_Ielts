@@ -12,12 +12,14 @@ def create_video_with_transcripts(
     filename: str, 
     filepath: str, 
     duration: float, 
-    segments_data: List[dict]
+    segments_data: List[dict],
+    topic: Optional[str] = None
 ) -> models.Video:
     """Lưu video cùng toàn bộ câu (segments) và mốc từ vựng (words) vào SQLite theo quan hệ quan hệ 1-N"""
     # 1. Tạo bản ghi Video
     db_video = models.Video(
         title=title,
+        topic=topic or "1. Work & Study (Công việc và Học tập)",
         filename=filename,
         filepath=filepath,
         duration=duration
@@ -54,9 +56,12 @@ def create_video_with_transcripts(
     return db_video
 
 
-def get_videos(db: Session) -> List[models.Video]:
-    """Lấy danh sách tất cả video đã upload"""
-    return db.query(models.Video).order_by(desc(models.Video.created_at)).all()
+def get_videos(db: Session, topic: Optional[str] = None) -> List[models.Video]:
+    """Lấy danh sách video, có thể lọc theo chủ đề (topic)"""
+    query = db.query(models.Video)
+    if topic and topic.strip() and topic.lower() != "all":
+        query = query.filter(models.Video.topic == topic.strip())
+    return query.order_by(desc(models.Video.created_at)).all()
 
 
 def get_video_by_id(db: Session, video_id: int) -> Optional[models.Video]:

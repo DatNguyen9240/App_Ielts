@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .database import engine, Base, get_db
-from . import models, schemas, crud, whisper_service, downloader, translation_service
+from . import models, schemas, crud, whisper_service, downloader, translation_service, topics
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -46,17 +46,26 @@ os.makedirs(FRONTEND_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
+# ==================== TOPICS ENDPOINT ====================
+
+@app.get("/api/topics")
+def get_all_topics():
+    """Lấy danh sách 16 chủ đề IELTS chuẩn có đánh số để hiển thị tabs"""
+    return topics.IELTS_TOPICS
+
+
 # ==================== VIDEO ENDPOINTS ====================
 
 @app.post("/api/videos/upload", response_model=schemas.VideoResponse)
 async def upload_video(
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
+    topic: Optional[str] = Form(None),
     model_name: Optional[str] = Form("base"),
     db: Session = Depends(get_db)
 ):
     """
-    Tải lên video .mp4, chạy OpenAI Whisper để lấy Word-level Timestamps và lưu vào SQLite.
+    Tải lên video .mp4, chạy OpenAI Whisper để lấy Word-level Timestamps và lưu vào SQLite kèm chủ đề.
     """
     if not file.filename.lower().endswith((".mp4", ".mov", ".mkv", ".webm")):
         raise HTTPException(status_code=400, detail="Chỉ hỗ trợ các định dạng video (.mp4, .mov, .mkv, .webm)")
@@ -88,6 +97,9 @@ async def upload_video(
             os.remove(saved_filepath)
         raise HTTPException(status_code=500, detail=f"Không thể xử lý Whisper: {str(e)}")
 
+    # Xác định chủ đề (người dùng chọn hoặc tự động nhận diện theo từ khóa)
+    assigned_topic = topic.strip() if topic and topic.strip() else topics.auto_detect_topic(video_title)
+
     # 3. Lưu dữ liệu đã xử lý vào Database
     video_record = crud.create_video_with_transcripts(
         db=db,
@@ -95,10 +107,11 @@ async def upload_video(
         filename=safe_filename,
         filepath=f"/uploads/{safe_filename}",
         duration=whisper_data["duration"],
-        segments_data=whisper_data["segments"]
+        segments_data=whisper_data["segments"],
+        topic=assigned_topic
     )
 
-    logger.info(f"Video {video_record.id} đã được lưu thành công với {len(whisper_data['segments'])} câu.")
+    logger.info(f"Video {video_record.id} đã được lưu thành công với chủ đề '{assigned_topic}'.")
     return video_record
 
 
@@ -143,6 +156,9 @@ async def process_video_from_url(
         logger.error(f"Lỗi khi xử lý Whisper: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Không thể xử lý Whisper: {str(e)}")
 
+    # Xác định chủ đề (người dùng chọn hoặc tự động nhận diện theo từ khóa)
+    assigned_topic = req.topic.strip() if req.topic and req.topic.strip() else topics.auto_detect_topic(video_title)
+
     # 3. Lưu vào Database
     video_record = crud.create_video_with_transcripts(
         db=db,
@@ -150,18 +166,22 @@ async def process_video_from_url(
         filename=filename,
         filepath=f"/uploads/{filename}",
         duration=whisper_data["duration"],
-        segments_data=whisper_data["segments"]
+        segments_data=whisper_data["segments"],
+        topic=assigned_topic
     )
 
-    logger.info(f"Video từ URL đã xử lý hoàn tất (ID: {video_record.id}, Tiêu đề: {video_title})")
+    logger.info(f"Video từ URL đã xử lý hoàn tất (ID: {video_record.id}, Tiêu đề: {video_title}, Chủ đề: {assigned_topic})")
     return video_record
 
 
 
 @app.get("/api/videos", response_model=List[schemas.VideoResponse])
-def get_all_videos(db: Session = Depends(get_db)):
-    """Lấy danh sách các video đã tải lên"""
-    return crud.get_videos(db)
+def get_all_videos(
+    topic: Optional[str] = Query(None, description="Lọc theo chủ đề cụ thể"),
+    db: Session = Depends(get_db)
+):
+    """Lấy danh sách các video đã tải lên (có thể lọc theo chủ đề)"""
+    return crud.get_videos(db, topic=topic)
 
 
 @app.get("/api/videos/{video_id}")
@@ -183,6 +203,7 @@ def get_video_detail(video_id: int, db: Session = Depends(get_db)):
     return {
         "id": video.id,
         "title": video.title,
+        "topic": video.topic or "1. Work & Study (Công việc và Học tập)",
         "filename": video.filename,
         "filepath": video.filepath,
         "duration": video.duration,
