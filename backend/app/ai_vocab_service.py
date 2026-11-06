@@ -90,8 +90,8 @@ def save_gemini_api_key(api_key: str) -> bool:
 
 def call_gemini_api(prompt: str, api_key: str) -> List[Dict[str, Any]]:
     """Gửi yêu cầu tới Gemini API với cấu hình JSON output"""
-    # Thử gemini-1.5-flash trước, nếu lỗi thử gemini-2.0-flash
-    models_to_try = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+    # Sử dụng các model Gemini thế hệ mới nhất hỗ trợ v1beta generateContent
+    models_to_try = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro"]
     last_error = None
 
     for model_name in models_to_try:
