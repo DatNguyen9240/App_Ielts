@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .database import engine, Base, get_db
-from . import models, schemas, crud, whisper_service, downloader, translation_service, topics
+from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -52,6 +52,36 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 def get_all_topics():
     """Lấy danh sách 16 chủ đề IELTS chuẩn có đánh số để hiển thị tabs"""
     return topics.IELTS_TOPICS
+
+
+@app.get("/api/topics/{topic_id}/videos")
+def get_videos_for_topic(topic_id: int):
+    """
+    Tìm kiếm và gợi ý danh sách video IELTS thực tế theo chủ đề để người dùng tự do xem và học.
+    Gồm các video chọn lọc sẵn + tìm kiếm YouTube.
+    """
+    topic_item = next((t for t in topics.IELTS_TOPICS if t["id"] == topic_id), None)
+    if not topic_item:
+        raise HTTPException(status_code=404, detail="Không tìm thấy chủ đề này")
+
+    # 1. Video mặc định chọn lọc
+    default_videos = curated_videos.TOPIC_DEFAULT_VIDEOS.get(topic_id, [])
+
+    # 2. Tìm kiếm thêm video thực tế từ YouTube
+    online_videos = curated_videos.search_topic_videos_online(topic_item["short_title"], max_results=4)
+
+    seen_ids = set()
+    combined = []
+    for v in default_videos + online_videos:
+        if v.get("id") and v["id"] not in seen_ids:
+            seen_ids.add(v["id"])
+            combined.append(v)
+
+    return {
+        "topic_id": topic_id,
+        "topic_title": topic_item["title"],
+        "videos": combined
+    }
 
 
 # ==================== VIDEO ENDPOINTS ====================

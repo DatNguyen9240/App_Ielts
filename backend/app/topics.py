@@ -115,3 +115,4 @@ def auto_detect_topic(text: str) -> str:
             best_topic = item["title"]
 
     return best_topic
+

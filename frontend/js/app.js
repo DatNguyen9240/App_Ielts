@@ -6,6 +6,7 @@
 // ==================== STATE MANAGEMENT ====================
 const state = {
     topics: [],
+    activeTab: "my_videos", // "my_videos" hoặc topic object
     selectedTopic: "all",
     videos: [],
     currentVideo: null,
@@ -13,6 +14,7 @@ const state = {
     currentCardIndex: 0,
     isCardFlipped: false,
     searchDebounceTimer: null,
+    watchingVideo: null
 };
 
 // ==================== DOM ELEMENTS ====================
@@ -24,11 +26,27 @@ const DOM = {
     tabFlashcardSection: document.getElementById("tabFlashcardSection"),
     flashcardCountBadge: document.getElementById("flashcardCountBadge"),
 
+    // Views
+    myVideosView: document.getElementById("myVideosView"),
+    topicDiscoveryView: document.getElementById("topicDiscoveryView"),
+    topicDiscoveryTitle: document.getElementById("topicDiscoveryTitle"),
+    topicVideosLoading: document.getElementById("topicVideosLoading"),
+    topicVideosGrid: document.getElementById("topicVideosGrid"),
+    refreshTopicVideosBtn: document.getElementById("refreshTopicVideosBtn"),
+    backToMyVideosBtn: document.getElementById("backToMyVideosBtn"),
+
     // Topic Tabs & Selects
     topicTabsContainer: document.getElementById("topicTabsContainer"),
     activeTopicBadge: document.getElementById("activeTopicBadge"),
     videoUrlTopicSelect: document.getElementById("videoUrlTopicSelect"),
     videoTopicSelect: document.getElementById("videoTopicSelect"),
+
+    // Watch Online Video Modal
+    watchVideoModal: document.getElementById("watchVideoModal"),
+    closeWatchModalBtn: document.getElementById("closeWatchModalBtn"),
+    watchModalTitle: document.getElementById("watchModalTitle"),
+    watchIframe: document.getElementById("watchIframe"),
+    watchModalImportBtn: document.getElementById("watchModalImportBtn"),
 
     // Video Player & Controls
     videoSelect: document.getElementById("videoSelect"),
@@ -163,6 +181,17 @@ const API = {
         }
     },
 
+    async fetchTopicVideos(topicId) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/topics/${topicId}/videos`);
+            if (!res.ok) return { videos: [] };
+            return await res.json();
+        } catch (e) {
+            console.warn("Lỗi tải video chủ đề:", e);
+            return { videos: [] };
+        }
+    },
+
     async fetchVideos(topic = null) {
         let url = `${API_BASE_URL}/api/videos`;
         if (topic && topic !== "all") {
@@ -271,7 +300,7 @@ function switchTab(tabName) {
 }
 
 
-// ==================== TOPIC TABS & FILTERING ====================
+// ==================== TOPIC TABS & DISCOVERY LOGIC ====================
 
 /**
  * Tải danh sách 16 chủ đề và khởi tạo thanh tabs & dropdowns
@@ -304,85 +333,235 @@ function populateTopicSelects() {
 }
 
 /**
- * Hiển thị thanh tabs 16 chủ đề IELTS có đánh số
+ * Hiển thị thanh tabs: "📁 Video của tôi" + 16 chủ đề IELTS có đánh số
  */
 function renderTopicTabs() {
     if (!DOM.topicTabsContainer) return;
     DOM.topicTabsContainer.innerHTML = "";
 
-    // 1. Tab Tất cả
-    const allTab = document.createElement("button");
-    const isAllActive = state.selectedTopic === "all";
-    allTab.className = `whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
-        isAllActive 
-            ? "bg-indigo-600 text-white shadow-md shadow-indigo-100" 
+    // 1. Tab "📁 Video của tôi" (Nơi tra cứu từ vựng và xem video đã tải lên)
+    const myTab = document.createElement("button");
+    const isMyActive = state.activeTab === "my_videos";
+    myTab.className = `whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
+        isMyActive 
+            ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-400" 
             : "bg-slate-100 hover:bg-slate-200 text-slate-700"
     }`;
-    allTab.innerHTML = `<i class="fa-solid fa-sparkles text-[10px]"></i><span>Tất cả</span>`;
-    allTab.onclick = () => selectTopicFilter("all");
-    DOM.topicTabsContainer.appendChild(allTab);
+    myTab.innerHTML = `
+        <i class="fa-solid fa-folder-open text-xs ${isMyActive ? 'text-white' : 'text-indigo-600'}"></i>
+        <span>Video của tôi</span>
+        <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${isMyActive ? 'bg-indigo-800 text-white' : 'bg-slate-200 text-slate-700'}">${state.videos.length}</span>
+    `;
+    myTab.onclick = () => showMyVideosTab();
+    DOM.topicTabsContainer.appendChild(myTab);
 
-    // 2. 16 Tabs chủ đề có đánh số
+    // 2. 16 Tabs chủ đề có đánh số để người dùng tự do xem và khám phá video
     state.topics.forEach(t => {
         const tabBtn = document.createElement("button");
-        const isActive = state.selectedTopic === t.title;
-        tabBtn.className = `whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
+        const isActive = state.activeTab && state.activeTab.id === t.id;
+        tabBtn.className = `whitespace-nowrap px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
             isActive 
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-300" 
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-400" 
                 : "bg-slate-100 hover:bg-slate-200 text-slate-700"
         }`;
         // Hiển thị tiêu đề ngắn gọn có đánh số (ví dụ: "1. Work & Study")
         tabBtn.innerHTML = `<span>${t.id}. ${t.short_title}</span>`;
         tabBtn.title = t.title;
-        tabBtn.onclick = () => selectTopicFilter(t.title);
+        tabBtn.onclick = () => showTopicDiscoveryTab(t);
         DOM.topicTabsContainer.appendChild(tabBtn);
     });
 }
 
 /**
- * Xử lý khi người dùng chọn 1 tab chủ đề -> Lọc video liên quan đến chủ đề đó
+ * Chuyển sang Tab "Video của tôi" (Tra cứu từ vựng & Player nội bộ)
  */
-async function selectTopicFilter(topicTitle) {
-    state.selectedTopic = topicTitle;
+function showMyVideosTab() {
+    state.activeTab = "my_videos";
+    DOM.myVideosView.classList.remove("hidden");
+    DOM.topicDiscoveryView.classList.add("hidden");
+    if (DOM.activeTopicBadge) {
+        DOM.activeTopicBadge.innerText = `📁 Video của tôi (${state.videos.length} video)`;
+    }
+    renderTopicTabs();
+}
+
+/**
+ * Chuyển sang Tab Khám phá Video theo 1 trong 16 chủ đề IELTS
+ */
+async function showTopicDiscoveryTab(topic) {
+    state.activeTab = topic;
+    DOM.myVideosView.classList.add("hidden");
+    DOM.topicDiscoveryView.classList.remove("hidden");
+
+    if (DOM.topicDiscoveryTitle) {
+        DOM.topicDiscoveryTitle.innerText = topic.title;
+    }
+    if (DOM.activeTopicBadge) {
+        DOM.activeTopicBadge.innerText = `Chủ đề: ${topic.id}. ${topic.short_title}`;
+    }
     renderTopicTabs();
 
-    // Đồng bộ chủ đề được chọn vào các modal upload
-    if (topicTitle !== "all") {
-        if (DOM.videoUrlTopicSelect) DOM.videoUrlTopicSelect.value = topicTitle;
-        if (DOM.videoTopicSelect) DOM.videoTopicSelect.value = topicTitle;
-    }
+    // Điền sẵn chủ đề này vào các ô chọn khi tải video
+    if (DOM.videoUrlTopicSelect) DOM.videoUrlTopicSelect.value = topic.title;
+    if (DOM.videoTopicSelect) DOM.videoTopicSelect.value = topic.title;
 
-    // Lọc và tải lại danh sách video theo chủ đề này
-    await loadVideos(topicTitle);
+    await loadAndRenderTopicVideos(topic);
+}
+
+/**
+ * Tải và hiển thị danh sách video thực tế trên YouTube theo chủ đề
+ */
+async function loadAndRenderTopicVideos(topic) {
+    if (!DOM.topicVideosGrid) return;
+    DOM.topicVideosLoading.classList.remove("hidden");
+    DOM.topicVideosGrid.innerHTML = "";
+
+    try {
+        const data = await API.fetchTopicVideos(topic.id);
+        const videos = data.videos || [];
+        DOM.topicVideosLoading.classList.add("hidden");
+
+        if (videos.length === 0) {
+            DOM.topicVideosGrid.innerHTML = `
+                <div class="col-span-full py-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 p-8 space-y-3">
+                    <i class="fa-solid fa-video-slash text-4xl text-slate-300"></i>
+                    <p class="text-sm font-semibold text-slate-700">Chưa tìm thấy video cho chủ đề này</p>
+                    <p class="text-xs text-slate-400">Bạn có thể dán đường link video YouTube bất kỳ để thêm vào chủ đề này.</p>
+                </div>
+            `;
+            return;
+        }
+
+        videos.forEach(v => {
+            const card = document.createElement("div");
+            card.className = "bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between group";
+
+            const mins = Math.floor(v.duration / 60);
+            const secs = Math.floor(v.duration % 60);
+            const durationStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+
+            card.innerHTML = `
+                <div>
+                    <div class="relative aspect-video bg-slate-900 overflow-hidden cursor-pointer watch-now-trigger">
+                        <img src="${v.thumbnail}" alt="${v.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                        <span class="absolute bottom-2 right-2 bg-black/80 text-white font-mono text-[11px] font-bold px-2 py-0.5 rounded-md">
+                            ${durationStr}
+                        </span>
+                        <div class="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
+                            <div class="w-12 h-12 rounded-full bg-indigo-600/90 flex items-center justify-center shadow-lg">
+                                <i class="fa-solid fa-play text-lg ml-0.5"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-4 space-y-2">
+                        <div class="text-[11px] font-semibold text-indigo-600 truncate">
+                            <i class="fa-brands fa-youtube mr-1 text-red-500"></i> ${v.channel}
+                        </div>
+                        <h4 class="text-sm font-bold text-slate-800 line-clamp-2 leading-snug group-hover:text-indigo-600 transition" title="${v.title}">
+                            ${v.title}
+                        </h4>
+                    </div>
+                </div>
+                <div class="p-4 pt-0 border-t border-slate-100 flex items-center justify-between gap-2 mt-2">
+                    <button class="watch-btn flex-1 py-2 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center justify-center space-x-1.5">
+                        <i class="fa-solid fa-play text-[10px]"></i>
+                        <span>Xem video</span>
+                    </button>
+                    <button class="import-btn flex-1 py-2 px-2.5 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5">
+                        <i class="fa-solid fa-wand-magic-sparkles text-[10px] text-amber-500"></i>
+                        <span>Học từ vựng</span>
+                    </button>
+                </div>
+            `;
+
+            // Bấm xem video
+            card.querySelector(".watch-btn").onclick = () => openWatchVideoModal(v);
+            card.querySelector(".watch-now-trigger").onclick = () => openWatchVideoModal(v);
+
+            // Bấm nhập video để Whisper trích xuất từ vựng
+            card.querySelector(".import-btn").onclick = () => triggerImportTopicVideo(v, topic.title);
+
+            DOM.topicVideosGrid.appendChild(card);
+        });
+    } catch (err) {
+        console.error("Lỗi nạp video chủ đề:", err);
+        DOM.topicVideosLoading.classList.add("hidden");
+    }
+}
+
+/**
+ * Mở modal xem video YouTube trực tiếp
+ */
+function openWatchVideoModal(video) {
+    state.watchingVideo = video;
+    if (DOM.watchModalTitle) DOM.watchModalTitle.innerText = video.title;
+    if (DOM.watchIframe) DOM.watchIframe.src = `https://www.youtube.com/embed/${video.id}?autoplay=1`;
+    if (DOM.watchVideoModal) DOM.watchVideoModal.classList.remove("hidden");
+}
+
+/**
+ * Đóng modal xem video YouTube
+ */
+function closeWatchVideoModal() {
+    if (DOM.watchIframe) DOM.watchIframe.src = "";
+    if (DOM.watchVideoModal) DOM.watchVideoModal.classList.add("hidden");
+}
+
+/**
+ * Tự động tải video từ danh mục chủ đề và chạy Whisper để đưa vào "Video của tôi"
+ */
+async function triggerImportTopicVideo(video, topicTitle) {
+    if (!confirm(`Bạn có muốn tải và phân tích từ vựng video:\n"${video.title}"\nbằng Whisper để đưa vào "Video của tôi" không?\n(Quá trình sẽ mất khoảng 1-2 phút)`)) return;
+
+    closeWatchVideoModal();
+
+    // Mở modal upload để hiển thị tiến trình
+    DOM.uploadModal.classList.remove("hidden");
+    DOM.uploadProgressBox.classList.remove("hidden");
+    DOM.progressStatusText.innerText = `Đang tải video & Whisper đang trích xuất từng từ cho: "${video.title}"...`;
+    DOM.submitUrlBtn.disabled = true;
+
+    try {
+        const uploaded = await API.processVideoFromUrl({
+            url: video.url,
+            title: video.title,
+            topic: topicTitle,
+            model_name: "base"
+        });
+        alert(`Đã trích xuất xong từ vựng cho video "${uploaded.title}"!`);
+        DOM.uploadModal.classList.add("hidden");
+        // Nạp lại danh sách video của tôi và chuyển sang xem ngay
+        await loadVideos();
+        showMyVideosTab();
+        selectVideo(uploaded.id);
+    } catch (err) {
+        alert("Lỗi khi xử lý video: " + err.message);
+    } finally {
+        DOM.uploadProgressBox.classList.add("hidden");
+        DOM.submitUrlBtn.disabled = false;
+    }
 }
 
 
 // ==================== VIDEO PLAYER & SEARCH LOGIC ====================
 
 /**
- * Tải danh sách video và cập nhật dropdown theo chủ đề được chọn
+ * Tải danh sách video của tôi và cập nhật dropdown
  */
-async function loadVideos(topic = null) {
-    const filterTopic = topic || state.selectedTopic;
+async function loadVideos() {
     try {
-        state.videos = await API.fetchVideos(filterTopic);
+        state.videos = await API.fetchVideos();
         DOM.videoSelect.innerHTML = "";
 
-        // Cập nhật badge hiển thị chủ đề hiện tại
-        if (DOM.activeTopicBadge) {
-            const topicText = filterTopic === "all" ? "Tất cả chủ đề" : filterTopic;
-            DOM.activeTopicBadge.innerText = `${topicText} (${state.videos.length} video)`;
-        }
-
         if (state.videos.length === 0) {
-            const label = filterTopic === "all" ? "Chưa có video nào" : `Chưa có video nào thuộc "${filterTopic}"`;
-            DOM.videoSelect.innerHTML = `<option value="">-- ${label} (Hãy thêm video) --</option>`;
+            DOM.videoSelect.innerHTML = `<option value="">-- Chưa có video nào (Hãy dán link hoặc chọn chủ đề) --</option>`;
             DOM.videoPlaceholder.classList.remove("hidden");
             DOM.videoTitleDisplay.innerText = "Tiêu đề: Chưa có video";
             DOM.currentTimeDisplay.innerText = "00:00.0";
             DOM.totalDurationDisplay.innerText = "00:00.0";
             DOM.mainVideo.removeAttribute("src");
             DOM.mainVideo.load();
+            renderTopicTabs();
             return;
         }
 
@@ -393,8 +572,12 @@ async function loadVideos(topic = null) {
             DOM.videoSelect.appendChild(opt);
         });
 
-        // Tự động chọn video đầu tiên của chủ đề
-        selectVideo(state.videos[0].id);
+        // Chọn video đầu tiên nếu chưa có
+        if (!state.currentVideo || !state.videos.some(v => v.id === state.currentVideo.id)) {
+            selectVideo(state.videos[0].id);
+        }
+
+        renderTopicTabs();
     } catch (e) {
         console.error("Lỗi nạp video:", e);
     }
@@ -958,6 +1141,45 @@ function setupEventListeners() {
     DOM.closeReplayModalBtn.addEventListener("click", () => {
         DOM.replayVideo.pause();
         closeModal(DOM.videoReplayModal);
+    });
+
+    // Topic Discovery & Watch Modal Event Listeners
+    if (DOM.closeWatchModalBtn) {
+        DOM.closeWatchModalBtn.addEventListener("click", closeWatchVideoModal);
+    }
+    if (DOM.watchVideoModal) {
+        DOM.watchVideoModal.addEventListener("click", (e) => {
+            if (e.target === DOM.watchVideoModal) closeWatchVideoModal();
+        });
+    }
+    if (DOM.backToMyVideosBtn) {
+        DOM.backToMyVideosBtn.addEventListener("click", showMyVideosTab);
+    }
+    if (DOM.refreshTopicVideosBtn) {
+        DOM.refreshTopicVideosBtn.addEventListener("click", () => {
+            if (state.activeTab && typeof state.activeTab === "object") {
+                loadAndRenderTopicVideos(state.activeTab);
+            }
+        });
+    }
+    if (DOM.watchModalImportBtn) {
+        DOM.watchModalImportBtn.addEventListener("click", () => {
+            if (state.watchingVideo && state.activeTab) {
+                const topicTitle = typeof state.activeTab === "object" ? state.activeTab.title : "General";
+                triggerImportTopicVideo(state.watchingVideo, topicTitle);
+            }
+        });
+    }
+
+    // Phím Escape để đóng tất cả các modal đang mở
+    window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            closeWatchVideoModal();
+            closeModal(DOM.uploadModal);
+            closeModal(DOM.flashcardModal);
+            DOM.replayVideo.pause();
+            closeModal(DOM.videoReplayModal);
+        }
     });
 
     // 1. Xử lý tải video tự động từ Link (URL / YouTube / TikTok...)
