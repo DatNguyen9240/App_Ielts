@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .database import engine, Base, get_db
-from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos, description_service, youtube_service, topic_vocabularies, ai_vocab_service
+from . import models, schemas, crud, whisper_service, downloader, translation_service, topics, curated_videos, description_service, youtube_service, ai_vocab_service
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -181,10 +181,44 @@ def generate_topic_vocab_with_ai(
 @app.get("/api/topics/vocabularies/search")
 def search_all_topic_vocabularies(
     q: Optional[str] = Query(None, description="Từ khóa tra cứu từ vựng hoặc ngữ cảnh"),
-    topic_id: Optional[int] = Query(None, description="Lọc theo mã chủ đề (1-16)")
+    topic_id: Optional[int] = Query(None, description="Lọc theo mã chủ đề (1-16)"),
+    db: Session = Depends(get_db)
 ):
-    """Tìm kiếm từ vựng học thuật theo từ khóa hoặc mã chủ đề"""
-    results = topic_vocabularies.search_topic_vocabularies(query=q or "", topic_id=topic_id)
+    """Tìm kiếm từ vựng học thuật theo từ khóa hoặc mã chủ đề trực tiếp trong Database"""
+    from sqlalchemy import or_
+    query = db.query(models.TopicVocabulary)
+    if topic_id:
+        query = query.filter(models.TopicVocabulary.topic_id == topic_id)
+    if q and q.strip():
+        clean_q = f"%{q.strip().lower()}%"
+        query = query.filter(
+            or_(
+                models.TopicVocabulary.word.ilike(clean_q),
+                models.TopicVocabulary.meaning.ilike(clean_q),
+                models.TopicVocabulary.context_sentence.ilike(clean_q)
+            )
+        )
+    records = query.all()
+    results = []
+    for r in records:
+        colls = []
+        if r.collocations_json:
+            try:
+                colls = json.loads(r.collocations_json)
+            except Exception:
+                colls = []
+        results.append({
+            "id": r.id,
+            "topic_id": r.topic_id,
+            "word": r.word,
+            "phonetic": r.phonetic or "",
+            "part_of_speech": r.part_of_speech or "word",
+            "meaning": r.meaning,
+            "context_sentence": r.context_sentence,
+            "speaking_question": r.speaking_question or "",
+            "collocations": colls,
+            "source": r.source or "ai"
+        })
     return {
         "query": q,
         "topic_id": topic_id,

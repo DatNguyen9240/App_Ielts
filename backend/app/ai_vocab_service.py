@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from . import models, topics, topic_vocabularies
+from . import models, topics
 
 logger = logging.getLogger("ai_vocab_service")
 
@@ -200,57 +200,36 @@ Return ONLY a JSON array of 8 objects matching this exact structure:
     return cleaned_items
 
 
-def get_or_seed_topic_vocabularies(db: Session, topic_id: int) -> List[Dict[str, Any]]:
+def get_topic_vocabularies(db: Session, topic_id: int) -> List[Dict[str, Any]]:
     """
-    Lấy danh sách từ vựng của chủ đề từ Database.
-    Nếu trong DB chưa có từ vựng nào cho chủ đề này, tự động nạp từ curated_vocabularies ban đầu.
+    Lấy danh sách từ vựng của chủ đề được tạo tự động bởi AI từ Database.
+    Nếu chưa có, trả về danh sách rỗng để người dùng bấm AI sinh từ vựng.
     """
     records = db.query(models.TopicVocabulary).filter(models.TopicVocabulary.topic_id == topic_id).all()
-    if records:
-        results = []
-        for r in records:
-            colls = []
-            if r.collocations_json:
-                try:
-                    colls = json.loads(r.collocations_json)
-                except Exception:
-                    colls = []
-            results.append({
-                "id": r.id,
-                "word": r.word,
-                "phonetic": r.phonetic or "",
-                "part_of_speech": r.part_of_speech or "word",
-                "meaning": r.meaning,
-                "context_sentence": r.context_sentence,
-                "speaking_question": r.speaking_question or "",
-                "collocations": colls,
-                "source": r.source or "curated"
-            })
-        return results
-
-    # Chưa có trong DB -> Tự động nạp bộ từ curated ban đầu vào DB
-    initial_vocabs = topic_vocabularies.get_vocabularies_for_topic(topic_id)
-    created_list = []
-    for item in initial_vocabs:
-        colls_str = json.dumps(item.get("collocations", []), ensure_ascii=False)
-        tv = models.TopicVocabulary(
-            topic_id=topic_id,
-            word=item["word"].strip(),
-            phonetic=item.get("phonetic", ""),
-            part_of_speech=item.get("part_of_speech", "word"),
-            meaning=item.get("meaning", ""),
-            context_sentence=item.get("context_sentence", ""),
-            speaking_question=item.get("speaking_question", ""),
-            collocations_json=colls_str,
-            source="curated"
-        )
-        db.add(tv)
-        created_list.append({
-            **item,
-            "source": "curated"
+    results = []
+    for r in records:
+        colls = []
+        if r.collocations_json:
+            try:
+                colls = json.loads(r.collocations_json)
+            except Exception:
+                colls = []
+        results.append({
+            "id": r.id,
+            "word": r.word,
+            "phonetic": r.phonetic or "",
+            "part_of_speech": r.part_of_speech or "word",
+            "meaning": r.meaning,
+            "context_sentence": r.context_sentence,
+            "speaking_question": r.speaking_question or "",
+            "collocations": colls,
+            "source": r.source or "ai"
         })
-    db.commit()
-    return created_list
+    return results
+
+
+# Bí danh tương thích
+get_or_seed_topic_vocabularies = get_topic_vocabularies
 
 
 def add_ai_generated_vocabularies_to_db(
@@ -293,3 +272,4 @@ def add_ai_generated_vocabularies_to_db(
 
     db.commit()
     return saved_items
+
